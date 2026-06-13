@@ -109,6 +109,7 @@ export const App: React.FC = () => {
   // Escaneo Global
   const handleScan = async () => {
     setScanStatus('scanning');
+    setCurrentTab('cleaner');
     
     try {
       // Escaneo real de archivos del sistema
@@ -275,6 +276,8 @@ export const App: React.FC = () => {
             setItems={setCleanableItems}
             handleClean={handleCleanTrigger}
             isCleaning={isCleaning}
+            scanStatus={scanStatus}
+            handleScan={handleScan}
           />
         );
       case 'browsers':
@@ -284,6 +287,8 @@ export const App: React.FC = () => {
             setItems={setCleanableItems}
             handleClean={handleCleanTrigger}
             isCleaning={isCleaning}
+            scanStatus={scanStatus}
+            handleScan={handleScan}
           />
         );
       case 'startup':

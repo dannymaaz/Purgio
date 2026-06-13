@@ -224,6 +224,42 @@ pub fn scan_system_files() -> Vec<CleanableItem> {
                 ));
             }
         }
+
+        // Windows Update Cache
+        let win_update_cache = "C:\\Windows\\SoftwareDistribution\\Download";
+        let win_update_path = PathBuf::from(win_update_cache);
+        if win_update_path.exists() && !safety::is_path_critical(win_update_cache) {
+            let size = get_dir_size(&win_update_path);
+            items.push(CleanableItem::new(
+                "win_update_cache",
+                "Caché de Windows Update",
+                size,
+                win_update_cache,
+                RiskLevel::Safe,
+                "Archivos temporales descargados por Windows Update. Se pueden eliminar tras instalar actualizaciones.",
+                "Se liberará espacio. Si hay actualizaciones pendientes de instalar, se volverán a descargar.",
+                "Seguro de eliminar.",
+                "temp"
+            ));
+        }
+
+        // Logs del sistema de Windows
+        let win_logs = "C:\\Windows\\Logs";
+        let win_logs_path = PathBuf::from(win_logs);
+        if win_logs_path.exists() && !safety::is_path_critical(win_logs) {
+            let size = get_dir_size(&win_logs_path);
+            items.push(CleanableItem::new(
+                "win_logs",
+                "Archivos de Log del Sistema",
+                size,
+                win_logs,
+                RiskLevel::Safe,
+                "Registros de actividad detallada generados por el sistema operativo Windows y sus servicios.",
+                "Se borrarán logs de diagnóstico de texto plano antiguos. No afecta al funcionamiento de los programas.",
+                "Seguro de eliminar.",
+                "cache"
+            ));
+        }
     }
 
     #[cfg(target_os = "macos")]
@@ -363,6 +399,70 @@ pub fn scan_system_files() -> Vec<CleanableItem> {
                 "Se eliminarán todos los archivos guardados en la carpeta Descargas. Podrías perder información que no hayas respaldado en otras carpetas.",
                 "Requiere confirmación explícita del usuario.",
                 "temp"
+            ));
+        }
+    }
+
+    // 4. Caché de Desarrolladores (NPM, Pip, NuGet)
+    if let Ok(home_dir) = env::var("USERPROFILE").or_else(|_| env::var("HOME")) {
+        let home_path = PathBuf::from(&home_dir);
+
+        // NPM Cache
+        let npm_path = home_path.join(".npm");
+        if npm_path.exists() && !safety::is_path_critical(npm_path.to_str().unwrap_or("")) {
+            let size = get_dir_size(&npm_path);
+            items.push(CleanableItem::new(
+                "npm_cache",
+                "Caché de NPM (Node.js)",
+                size,
+                npm_path.to_str().unwrap_or(""),
+                RiskLevel::Safe,
+                "Descargas cacheadas de paquetes e información de dependencias por Node Package Manager (npm).",
+                "NPM descargará los paquetes directamente de internet la próxima vez que ejecutes 'npm install'.",
+                "Seguro de eliminar.",
+                "cache"
+            ));
+        }
+
+        // Pip Cache
+        let pip_path = if cfg!(target_os = "windows") {
+            if let Ok(local_appdata) = env::var("LOCALAPPDATA") {
+                PathBuf::from(local_appdata).join("pip\\cache")
+            } else {
+                home_path.join("AppData\\Local\\pip\\cache")
+            }
+        } else {
+            home_path.join(".cache/pip")
+        };
+        if pip_path.exists() && !safety::is_path_critical(pip_path.to_str().unwrap_or("")) {
+            let size = get_dir_size(&pip_path);
+            items.push(CleanableItem::new(
+                "pip_cache",
+                "Caché de Pip (Python)",
+                size,
+                pip_path.to_str().unwrap_or(""),
+                RiskLevel::Safe,
+                "Descargas locales cacheadas de librerías e instaladores de Python por pip.",
+                "Pip descargará los paquetes desde PyPI si no los encuentra localmente al instalar dependencias.",
+                "Seguro de eliminar.",
+                "cache"
+            ));
+        }
+
+        // NuGet Cache
+        let nuget_path = home_path.join(".nuget\\packages");
+        if nuget_path.exists() && !safety::is_path_critical(nuget_path.to_str().unwrap_or("")) {
+            let size = get_dir_size(&nuget_path);
+            items.push(CleanableItem::new(
+                "nuget_cache",
+                "Caché de NuGet (.NET)",
+                size,
+                nuget_path.to_str().unwrap_or(""),
+                RiskLevel::Safe,
+                "Paquetes de librerías .NET compilados y cacheados localmente en tu perfil de usuario.",
+                "Los proyectos volverán a descargar los paquetes NuGet necesarios cuando compiles la solución.",
+                "Seguro de eliminar.",
+                "cache"
             ));
         }
     }

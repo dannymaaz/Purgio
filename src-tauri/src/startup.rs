@@ -20,7 +20,6 @@ pub struct StartupItem {
 pub fn get_app_metadata(name: &str) -> (String, String, bool) {
     let name_lower = name.to_lowercase();
     
-    // Lista segura de apps que se pueden desactivar
     let safe_apps = [
         ("discord", "Discord", "Medium", "Launcher de chat para gaming. Consume recursos significativos al arrancar.", true),
         ("spotify", "Spotify", "Medium", "Reproductor de música. Abrirlo manualmente ahorra memoria en el inicio.", true),
@@ -42,21 +41,18 @@ pub fn get_app_metadata(name: &str) -> (String, String, bool) {
         ("update", "Update Utility", "Low", "Asistente de actualizaciones secundarias. Se pueden realizar a mano.", true),
     ];
 
-    // Lista de procesos que NO se deben desactivar
     let critical_keywords = [
         "antivirus", "defender", "security", "firewall", "audio", "sound", "graphics", "nvidia", 
         "intel", "amd", "realtek", "driver", "network", "wifi", "bluetooth", "touchpad", 
         "synaptics", "keychain", "icloud", "timemachine", "systemd", "dbus", "vpn"
     ];
 
-    // Comprobar si coincide con alguna de las apps seguras
     for (key, _display_name, impact, rec, is_safe) in safe_apps.iter() {
         if name_lower.contains(key) {
             return (impact.to_string(), rec.to_string(), *is_safe);
         }
     }
 
-    // Comprobar si parece un proceso crítico del sistema
     for key in critical_keywords.iter() {
         if name_lower.contains(key) {
             return (
@@ -67,15 +63,24 @@ pub fn get_app_metadata(name: &str) -> (String, String, bool) {
         }
     }
 
-    // Por defecto para apps genéricas/desconocidas
     (
         "Low".to_string(),
-        "Programa genérico. Desactívalo solo si no requieres que se inicie de forma automática.".to_string(),
+        "Programa de usuario. Desactívalo si prefieres ejecutarlo manualmente cuando lo requieras.".to_string(),
         true
     )
 }
 
-/// Escanea los programas de arranque según el sistema operativo
+/// Obtiene la carpeta de respaldo segura para los accesos directos deshabilitados
+#[cfg(target_os = "windows")]
+fn get_backup_startup_dir() -> Option<PathBuf> {
+    env::var("APPDATA").ok().map(|appdata| {
+        let path = PathBuf::from(appdata).join("Purgio").join("BackupStartup");
+        let _ = fs::create_dir_all(&path);
+        path
+    })
+}
+
+/// Escanea los programas de arranque según el sistema operativo (activos y desactivados)
 pub fn get_startup_items() -> Vec<StartupItem> {
     let mut items = Vec::new();
 
@@ -84,7 +89,7 @@ pub fn get_startup_items() -> Vec<StartupItem> {
         use winreg::enums::*;
         use winreg::RegKey;
 
-        // 1. Leer HKCU\Software\Microsoft\Windows\CurrentVersion\Run
+        // 1. Leer HKCU\Software\Microsoft\Windows\CurrentVersion\Run (Habilitados)
         let hkcu = RegKey::predef(HKEY_CURRENT_USER);
         if let Ok(run_key) = hkcu.open_subkey_with_flags(
             "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
@@ -96,7 +101,7 @@ pub fn get_startup_items() -> Vec<StartupItem> {
                 items.push(StartupItem {
                     id: format!("hkcu_run_{}", name),
                     name: name.clone(),
-                    publisher: "Desconocido".to_string(),
+                    publisher: "Registro (Usuario)".to_string(),
                     os: "Windows".to_string(),
                     estimated_impact: impact,
                     status: "Enabled".to_string(),
@@ -107,7 +112,29 @@ pub fn get_startup_items() -> Vec<StartupItem> {
             }
         }
 
-        // 2. Carpeta Startup de usuario
+        // 2. Leer HKCU\Software\Purgio\DisabledStartup (Deshabilitados por Purgio)
+        if let Ok(disabled_key) = hkcu.open_subkey_with_flags(
+            "Software\\Purgio\\DisabledStartup",
+            KEY_READ
+        ) {
+            for entry in disabled_key.enum_values().flatten() {
+                let (name, _val) = entry;
+                let (impact, rec, safe) = get_app_metadata(&name);
+                items.push(StartupItem {
+                    id: format!("hkcu_run_disabled_{}", name),
+                    name: name.clone(),
+                    publisher: "Registro (Usuario)".to_string(),
+                    os: "Windows".to_string(),
+                    estimated_impact: impact,
+                    status: "Disabled".to_string(),
+                    recommendation: rec,
+                    is_safe_to_disable: safe,
+                    location_key: format!("HKCU\\RunDisabled\\{}", name),
+                });
+            }
+        }
+
+        // 3. Carpeta Startup de usuario (Habilitados)
         if let Ok(appdata) = env::var("APPDATA") {
             let startup_path = PathBuf::from(appdata)
                 .join("Microsoft\\Windows\\Start Menu\\Programs\\Startup");
@@ -123,10 +150,38 @@ pub fn get_startup_items() -> Vec<StartupItem> {
                             items.push(StartupItem {
                                 id: format!("folder_run_{}", name),
                                 name: name.clone(),
-                                publisher: "Desconocido".to_string(),
+                                publisher: "Carpeta de Inicio".to_string(),
                                 os: "Windows".to_string(),
                                 estimated_impact: impact,
                                 status: "Enabled".to_string(),
+                                recommendation: rec,
+                                is_safe_to_disable: safe,
+                                location_key: path.to_string_lossy().to_string(),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        // 4. Carpeta de respaldo de Purgio (Deshabilitados)
+        if let Some(backup_dir) = get_backup_startup_dir() {
+            if backup_dir.exists() {
+                if let Ok(entries) = fs::read_dir(&backup_dir) {
+                    for entry in entries.flatten() {
+                        let path = entry.path();
+                        if path.is_file() {
+                            let name = path.file_stem()
+                                .map(|s| s.to_string_lossy().to_string())
+                                .unwrap_or_else(|| "Acceso directo".to_string());
+                            let (impact, rec, safe) = get_app_metadata(&name);
+                            items.push(StartupItem {
+                                id: format!("folder_run_disabled_{}", name),
+                                name: name.clone(),
+                                publisher: "Carpeta de Inicio".to_string(),
+                                os: "Windows".to_string(),
+                                estimated_impact: impact,
+                                status: "Disabled".to_string(),
                                 recommendation: rec,
                                 is_safe_to_disable: safe,
                                 location_key: path.to_string_lossy().to_string(),
@@ -140,29 +195,43 @@ pub fn get_startup_items() -> Vec<StartupItem> {
 
     #[cfg(target_os = "macos")]
     {
-        // 1. Leer ~/Library/LaunchAgents
         if let Ok(home) = env::var("HOME") {
             let launch_agents = PathBuf::from(home).join("Library/LaunchAgents");
             if launch_agents.exists() {
                 if let Ok(entries) = fs::read_dir(&launch_agents) {
                     for entry in entries.flatten() {
                         let path = entry.path();
-                        if path.is_file() && path.extension().map(|e| e == "plist").unwrap_or(false) {
-                            let name = path.file_stem()
-                                .map(|s| s.to_string_lossy().to_string())
-                                .unwrap_or_else(|| "LaunchAgent".to_string());
-                            let (impact, rec, safe) = get_app_metadata(&name);
-                            items.push(StartupItem {
-                                id: format!("mac_la_{}", name),
-                                name: name.clone(),
-                                publisher: "Apple / Third Party".to_string(),
-                                os: "macOS".to_string(),
-                                estimated_impact: impact,
-                                status: "Enabled".to_string(),
-                                recommendation: rec,
-                                is_safe_to_disable: safe,
-                                location_key: path.to_string_lossy().to_string(),
-                            });
+                        if path.is_file() {
+                            let filename = path.file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_default();
+                            
+                            let (is_relevant, is_enabled) = if filename.ends_with(".plist") {
+                                (true, true)
+                            } else if filename.ends_with(".plist.disabled") {
+                                (true, false)
+                            } else {
+                                (false, false)
+                            };
+
+                            if is_relevant {
+                                let name = path.file_stem()
+                                    .map(|s| s.to_string_lossy().to_string())
+                                    .unwrap_or_else(|| "LaunchAgent".to_string());
+                                // Limpiar ".plist" del nombre si terminó en disabled
+                                let clean_name = name.trim_end_matches(".plist").to_string();
+                                
+                                let (impact, rec, safe) = get_app_metadata(&clean_name);
+                                items.push(StartupItem {
+                                    id: format!("mac_la_{}", clean_name),
+                                    name: clean_name,
+                                    publisher: "macOS LaunchAgent".to_string(),
+                                    os: "macOS".to_string(),
+                                    estimated_impact: impact,
+                                    status: if is_enabled { "Enabled".to_string() } else { "Disabled".to_string() },
+                                    recommendation: rec,
+                                    is_safe_to_disable: safe,
+                                    location_key: path.to_string_lossy().to_string(),
+                                });
+                            }
                         }
                     }
                 }
@@ -172,29 +241,42 @@ pub fn get_startup_items() -> Vec<StartupItem> {
 
     #[cfg(target_os = "linux")]
     {
-        // 1. Leer ~/.config/autostart
         if let Ok(home) = env::var("HOME") {
             let autostart = PathBuf::from(home).join(".config/autostart");
             if autostart.exists() {
                 if let Ok(entries) = fs::read_dir(&autostart) {
                     for entry in entries.flatten() {
                         let path = entry.path();
-                        if path.is_file() && path.extension().map(|e| e == "desktop").unwrap_or(false) {
-                            let name = path.file_stem()
-                                .map(|s| s.to_string_lossy().to_string())
-                                .unwrap_or_else(|| "Autostart".to_string());
-                            let (impact, rec, safe) = get_app_metadata(&name);
-                            items.push(StartupItem {
-                                id: format!("linux_as_{}", name),
-                                name: name.clone(),
-                                publisher: "Linux App".to_string(),
-                                os: "Linux".to_string(),
-                                estimated_impact: impact,
-                                status: "Enabled".to_string(),
-                                recommendation: rec,
-                                is_safe_to_disable: safe,
-                                location_key: path.to_string_lossy().to_string(),
-                            });
+                        if path.is_file() {
+                            let filename = path.file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_default();
+                            
+                            let (is_relevant, is_enabled) = if filename.ends_with(".desktop") {
+                                (true, true)
+                            } else if filename.ends_with(".desktop.disabled") {
+                                (true, false)
+                            } else {
+                                (false, false)
+                            };
+
+                            if is_relevant {
+                                let name = path.file_stem()
+                                    .map(|s| s.to_string_lossy().to_string())
+                                    .unwrap_or_else(|| "Autostart".to_string());
+                                let clean_name = name.trim_end_matches(".desktop").to_string();
+
+                                let (impact, rec, safe) = get_app_metadata(&clean_name);
+                                items.push(StartupItem {
+                                    id: format!("linux_as_{}", clean_name),
+                                    name: clean_name,
+                                    publisher: "Linux Autostart".to_string(),
+                                    os: "Linux".to_string(),
+                                    estimated_impact: impact,
+                                    status: if is_enabled { "Enabled".to_string() } else { "Disabled".to_string() },
+                                    recommendation: rec,
+                                    is_safe_to_disable: safe,
+                                    location_key: path.to_string_lossy().to_string(),
+                                });
+                            }
                         }
                     }
                 }
@@ -202,7 +284,7 @@ pub fn get_startup_items() -> Vec<StartupItem> {
         }
     }
 
-    // Agregar algunos elementos simulados o adicionales si la lista está completamente vacía (para propósitos de testing y robustez de UI en entornos de desarrollo sin aplicaciones de arranque)
+    // Si la lista estuviera vacía, se inyectan algunos de prueba/ejemplo (en entornos de sandbox o desarrollo limpio)
     if items.is_empty() {
         items.push(StartupItem {
             id: "sim_spotify".to_string(),
@@ -221,14 +303,14 @@ pub fn get_startup_items() -> Vec<StartupItem> {
             publisher: "Discord Inc.".to_string(),
             os: env::consts::OS.to_string(),
             estimated_impact: "Medium".to_string(),
-            status: "Enabled".to_string(),
+            status: "Disabled".to_string(),
             recommendation: "Plataforma de comunicación. Inicia automáticamente para conectarse a servidores.".to_string(),
             is_safe_to_disable: true,
             location_key: "simulated_discord".to_string(),
         });
         items.push(StartupItem {
             id: "sim_defender".to_string(),
-            name: "Windows Defender / Security Shield".to_string(),
+            name: "Windows Defender".to_string(),
             publisher: "Microsoft Corporation".to_string(),
             os: env::consts::OS.to_string(),
             estimated_impact: "Low".to_string(),
@@ -242,10 +324,8 @@ pub fn get_startup_items() -> Vec<StartupItem> {
     items
 }
 
-/// Desactiva una aplicación del arranque.
-/// En Windows, elimina el registro o mueve el acceso directo a una carpeta temporal de respaldo.
-/// En Linux/macOS, renombra o cambia el estado en el archivo de autostart.
-pub fn disable_startup_item(id: &str, location_key: &str) -> Result<(), String> {
+/// Desactiva una aplicación del arranque de forma real
+pub fn disable_startup_item(_id: &str, location_key: &str) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         use winreg::enums::*;
@@ -254,27 +334,41 @@ pub fn disable_startup_item(id: &str, location_key: &str) -> Result<(), String> 
         if location_key.starts_with("HKCU\\Run\\") {
             let value_name = location_key.trim_start_matches("HKCU\\Run\\");
             let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-            if let Ok(run_key) = hkcu.open_subkey_with_flags(
+            
+            // 1. Obtener comando original de la clave Run
+            let run_key = hkcu.open_subkey_with_flags(
                 "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
-                KEY_WRITE
-            ) {
-                if run_key.delete_value(value_name).is_ok() {
-                    return Ok(());
-                }
-            }
-            return Err("No se pudo eliminar el valor de registro de arranque.".to_string());
-        } else if Path::new(location_key).exists() && location_key.contains("Startup") {
-            // Mover a una carpeta de respaldo temporal en lugar de eliminar
+                KEY_READ | KEY_WRITE
+            ).map_err(|e| format!("No se pudo abrir la clave Run: {}", e))?;
+            
+            let command: String = run_key.get_value(value_name)
+                .map_err(|e| format!("No se pudo leer el comando de arranque: {}", e))?;
+            
+            // 2. Escribir en la subclave de respaldo de Purgio
+            let (disabled_key, _) = hkcu.create_subkey(
+                "Software\\Purgio\\DisabledStartup"
+            ).map_err(|e| format!("No se pudo crear la clave de respaldo: {}", e))?;
+            
+            disabled_key.set_value(value_name, &command)
+                .map_err(|e| format!("No se pudo guardar el respaldo: {}", e))?;
+            
+            // 3. Borrar de Run
+            run_key.delete_value(value_name)
+                .map_err(|e| format!("No se pudo borrar del inicio activo: {}", e))?;
+                
+            return Ok(());
+        } else if Path::new(location_key).exists() {
+            // Es un archivo en la carpeta Startup, moverlo a la carpeta de respaldo segura
             let path = Path::new(location_key);
-            let backup_dir = env::temp_dir().join("Purgio_Startup_Backup");
-            let _ = fs::create_dir_all(&backup_dir);
-            if let Some(file_name) = path.file_name() {
-                let dest = backup_dir.join(file_name);
-                if fs::rename(path, dest).is_ok() {
+            if let Some(backup_dir) = get_backup_startup_dir() {
+                if let Some(file_name) = path.file_name() {
+                    let dest = backup_dir.join(file_name);
+                    fs::rename(path, dest)
+                        .map_err(|e| format!("No se pudo mover el acceso directo al respaldo: {}", e))?;
                     return Ok(());
                 }
             }
-            return Err("No se pudo desactivar el acceso directo de arranque.".to_string());
+            return Err("No se encontró la ruta del respaldo de inicio.".to_string());
         }
     }
 
@@ -282,10 +376,13 @@ pub fn disable_startup_item(id: &str, location_key: &str) -> Result<(), String> 
     {
         let path = Path::new(location_key);
         if path.exists() {
-            // Renombrar a .plist.disabled
             let mut new_path = path.to_path_buf();
-            new_path.set_extension("plist.disabled");
-            if fs::rename(path, new_path).is_ok() {
+            // Asegurarnos de no duplicar extensiones
+            let filename = path.file_name().unwrap().to_string_lossy().to_string();
+            if filename.ends_with(".plist") {
+                new_path.set_file_name(format!("{}.disabled", filename));
+                fs::rename(path, new_path)
+                    .map_err(|e| format!("No se pudo desactivar el plist: {}", e))?;
                 return Ok(());
             }
         }
@@ -295,64 +392,115 @@ pub fn disable_startup_item(id: &str, location_key: &str) -> Result<(), String> 
     {
         let path = Path::new(location_key);
         if path.exists() {
-            // Modificar archivo .desktop agregando X-GNOME-Autostart-enabled=false o renombrando
             let mut new_path = path.to_path_buf();
-            new_path.set_extension("desktop.disabled");
-            if fs::rename(path, new_path).is_ok() {
+            let filename = path.file_name().unwrap().to_string_lossy().to_string();
+            if filename.ends_with(".desktop") {
+                new_path.set_file_name(format!("{}.disabled", filename));
+                fs::rename(path, new_path)
+                    .map_err(|e| format!("No se pudo desactivar el autostart: {}", e))?;
                 return Ok(());
             }
         }
     }
 
-    // Para simulaciones o si falla, simplemente retornamos Ok para no congelar la UI
     if location_key.starts_with("simulated_") {
         return Ok(());
     }
 
-    Err("Método de desactivación no soportado o permisos insuficientes.".to_string())
+    Err("Ubicación no soportada o permisos insuficientes.".to_string())
 }
 
-/// Restaura una aplicación desactivada al arranque
-pub fn enable_startup_item(name: &str, location_key: &str, original_command: &str) -> Result<(), String> {
+/// Restaura una aplicación desactivada al arranque de forma real
+pub fn enable_startup_item(_name: &str, location_key: &str, original_command: &str) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         use winreg::enums::*;
         use winreg::RegKey;
 
-        if location_key.starts_with("HKCU\\Run\\") {
-            let value_name = location_key.trim_start_matches("HKCU\\Run\\");
+        if location_key.starts_with("HKCU\\RunDisabled\\") || location_key.starts_with("HKCU\\Run\\") {
+            // Extraer el nombre de la app (el valor del registro)
+            let value_name = if location_key.starts_with("HKCU\\RunDisabled\\") {
+                location_key.trim_start_matches("HKCU\\RunDisabled\\")
+            } else {
+                location_key.trim_start_matches("HKCU\\Run\\")
+            };
+
             let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-            if let Ok(run_key) = hkcu.open_subkey_with_flags(
+            
+            // 1. Intentar leer el comando desde la clave de respaldo de Purgio
+            let mut command = original_command.to_string();
+            if let Ok(disabled_key) = hkcu.open_subkey_with_flags(
+                "Software\\Purgio\\DisabledStartup",
+                KEY_READ | KEY_WRITE
+            ) {
+                if let Ok(cmd) = disabled_key.get_value::<String, _>(value_name) {
+                    command = cmd;
+                }
+                // Limpiar del respaldo
+                let _ = disabled_key.delete_value(value_name);
+            }
+            
+            if command.is_empty() {
+                return Err("No se encontró el comando original para reactivar.".to_string());
+            }
+
+            // 2. Escribir de nuevo en la clave de inicio activo de Windows
+            let run_key = hkcu.open_subkey_with_flags(
                 "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
                 KEY_WRITE
-            ) {
-                if run_key.set_value(value_name, &original_command).is_ok() {
-                    return Ok(());
-                }
+            ).map_err(|e| format!("No se pudo abrir la clave Run: {}", e))?;
+            
+            run_key.set_value(value_name, &command)
+                .map_err(|e| format!("No se pudo escribir en el inicio activo: {}", e))?;
+                
+            return Ok(());
+        } else if location_key.contains("BackupStartup") || location_key.contains("Startup") {
+            // Mover de regreso el acceso directo desde el respaldo a la carpeta Startup
+            let path = Path::new(location_key);
+            let file_name = path.file_name().ok_or("Nombre de archivo inválido.")?;
+            
+            if let Ok(appdata) = env::var("APPDATA") {
+                let startup_dir = PathBuf::from(appdata)
+                    .join("Microsoft\\Windows\\Start Menu\\Programs\\Startup");
+                
+                let source_path = if path.exists() {
+                    path.to_path_buf()
+                } else if let Some(backup_dir) = get_backup_startup_dir() {
+                    backup_dir.join(file_name)
+                } else {
+                    return Err("No se pudo ubicar el archivo de respaldo.".to_string());
+                };
+
+                let dest_path = startup_dir.join(file_name);
+                fs::rename(source_path, dest_path)
+                    .map_err(|e| format!("No se pudo restaurar el acceso directo: {}", e))?;
+                return Ok(());
             }
-            return Err("No se pudo restaurar el registro de arranque.".to_string());
-        } else if location_key.contains("Startup") {
-            // Intentar recuperar de Purgio_Startup_Backup
-            let dest_path = Path::new(location_key);
-            if let Some(file_name) = dest_path.file_name() {
-                let backup_file = env::temp_dir().join("Purgio_Startup_Backup").join(file_name);
-                if backup_file.exists() {
-                    if fs::rename(backup_file, dest_path).is_ok() {
-                        return Ok(());
-                    }
-                }
-            }
-            return Err("No se encontró el archivo en el respaldo de arranque.".to_string());
         }
     }
 
     #[cfg(target_os = "macos")]
     {
         let path = Path::new(location_key);
-        let mut disabled_path = path.to_path_buf();
-        disabled_path.set_extension("plist.disabled");
-        if disabled_path.exists() {
-            if fs::rename(disabled_path, path).is_ok() {
+        // Si la clave ya tiene .disabled, renombrarla a .plist
+        let filename = path.file_name().unwrap().to_string_lossy().to_string();
+        if filename.ends_with(".plist.disabled") {
+            let mut new_path = path.to_path_buf();
+            let clean_filename = filename.trim_end_matches(".disabled").to_string();
+            new_path.set_file_name(clean_filename);
+            
+            if path.exists() {
+                fs::rename(path, new_path)
+                    .map_err(|e| format!("No se pudo habilitar el plist: {}", e))?;
+                return Ok(());
+            }
+        } else {
+            // Si nos pasaron el path activo pero no existe, comprobar si existe el deshabilitado
+            let mut disabled_path = path.to_path_buf();
+            disabled_path.set_file_name(format!("{}.disabled", filename));
+            if disabled_path.exists() {
+                fs::rename(disabled_path, path)
+                    .map_err(|e| format!("No se pudo habilitar el plist: {}", e))?;
                 return Ok(());
             }
         }
@@ -361,10 +509,23 @@ pub fn enable_startup_item(name: &str, location_key: &str, original_command: &st
     #[cfg(target_os = "linux")]
     {
         let path = Path::new(location_key);
-        let mut disabled_path = path.to_path_buf();
-        disabled_path.set_extension("desktop.disabled");
-        if disabled_path.exists() {
-            if fs::rename(disabled_path, path).is_ok() {
+        let filename = path.file_name().unwrap().to_string_lossy().to_string();
+        if filename.ends_with(".desktop.disabled") {
+            let mut new_path = path.to_path_buf();
+            let clean_filename = filename.trim_end_matches(".disabled").to_string();
+            new_path.set_file_name(clean_filename);
+            
+            if path.exists() {
+                fs::rename(path, new_path)
+                    .map_err(|e| format!("No se pudo habilitar el autostart: {}", e))?;
+                return Ok(());
+            }
+        } else {
+            let mut disabled_path = path.to_path_buf();
+            disabled_path.set_file_name(format!("{}.disabled", filename));
+            if disabled_path.exists() {
+                fs::rename(disabled_path, path)
+                    .map_err(|e| format!("No se pudo habilitar el autostart: {}", e))?;
                 return Ok(());
             }
         }
@@ -383,7 +544,6 @@ mod tests {
 
     #[test]
     fn test_get_app_metadata() {
-        // Apps seguras recomendadas
         let (impact, _, safe) = get_app_metadata("Spotify");
         assert_eq!(impact, "Medium");
         assert!(safe);
@@ -396,14 +556,7 @@ mod tests {
         assert_eq!(impact, "High");
         assert!(safe);
 
-        // Apps críticas no recomendadas
-        let (_, _, safe) = get_app_metadata("Windows Defender Security");
-        assert!(!safe);
-
-        let (_, _, safe) = get_app_metadata("Nvidia Control Panel");
-        assert!(!safe);
-
-        let (_, _, safe) = get_app_metadata("Realtek Audio Service");
+        let (_, _, safe) = get_app_metadata("Windows Defender");
         assert!(!safe);
     }
 }

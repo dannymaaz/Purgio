@@ -1,5 +1,5 @@
 import React from 'react';
-import { RefreshIcon, PowerIcon } from '../components/Icons';
+
 
 export interface StartupItem {
   id: string;
@@ -69,8 +69,8 @@ export const Startup: React.FC<StartupProps> = ({
               <div key={item.id} className="startup-card" style={!item.is_safe_to_disable ? { borderLeft: '3px solid var(--warning)' } : {}}>
                 <div className="startup-card-header">
                   <div className="startup-app-info">
-                    <span className="startup-app-name">{item.name}</span>
-                    <span className="startup-app-publisher">{item.publisher} • {item.os}</span>
+                    <span className="startup-app-name" title={item.name}>{item.name}</span>
+                    <span className="startup-app-publisher" title={`${item.publisher} • ${item.os}`}>{item.publisher} • {item.os}</span>
                   </div>
                   <span className={`impact-badge ${getImpactClass(item.estimated_impact)}`}>
                     {getImpactTranslation(item.estimated_impact)}
@@ -91,27 +91,16 @@ export const Startup: React.FC<StartupProps> = ({
                     </span>
                   </div>
                   
-                  {isEnabled ? (
-                    <button 
-                      className={`btn ${item.is_safe_to_disable ? 'btn-danger' : 'btn-secondary'}`}
-                      style={{ padding: '6px 12px', fontSize: '12px' }}
-                      onClick={() => handleDisable(item)}
+                  <label className="switch-premium">
+                    <input 
+                      type="checkbox"
+                      checked={isEnabled}
+                      onChange={() => isEnabled ? handleDisable(item) : handleEnable(item)}
                       disabled={isActioning}
-                    >
-                      <PowerIcon size={12} />
-                      Desactivar
-                    </button>
-                  ) : (
-                    <button 
-                      className="btn btn-success"
-                      style={{ padding: '6px 12px', fontSize: '12px' }}
-                      onClick={() => handleEnable(item)}
-                      disabled={isActioning}
-                    >
-                      <RefreshIcon size={12} />
-                      Restaurar
-                    </button>
-                  )}
+                      aria-label={`Activar o desactivar inicio de ${item.name}`}
+                    />
+                    <span className="slider-premium"></span>
+                  </label>
                 </div>
               </div>
             );

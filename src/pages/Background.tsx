@@ -52,8 +52,8 @@ export const Background: React.FC<BackgroundProps> = ({
           {items.map((item) => (
             <div key={item.pid} className="process-item">
               <div className="process-info-left">
-                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                  <span style={{ fontWeight: '600', fontSize: '15px' }}>{item.name}</span>
+                <div className="process-name-container">
+                  <span className="process-name-text">{item.name}</span>
                   <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>PID: {item.pid}</span>
                 </div>
                 

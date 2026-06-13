@@ -1,19 +1,23 @@
 import React, { useState } from 'react';
 import { CleanableItem } from './Cleaner';
-import { InfoIcon, TrashIcon, WarningIcon } from '../components/Icons';
+import { InfoIcon, TrashIcon, WarningIcon, RefreshIcon } from '../components/Icons';
 
 interface BrowsersProps {
   items: CleanableItem[];
   setItems: React.Dispatch<React.SetStateAction<CleanableItem[]>>;
   handleClean: (selectedItems: CleanableItem[]) => void;
   isCleaning: boolean;
+  scanStatus?: 'idle' | 'scanning' | 'done';
+  handleScan?: () => void;
 }
 
 export const Browsers: React.FC<BrowsersProps> = ({
   items,
   setItems,
   handleClean,
-  isCleaning
+  isCleaning,
+  scanStatus = 'idle',
+  handleScan
 }) => {
   const [expandedItem, setExpandedItem] = useState<string | null>(null);
 
@@ -41,8 +45,6 @@ export const Browsers: React.FC<BrowsersProps> = ({
   // Filtrar solo items que son de navegadores
   const browserItems = items.filter(item => item.category.startsWith('browser_'));
 
-  // Agrupar items por Navegador
-  // Los IDs de los navegadores se generan en Rust como "chrome_cache", "firefox_sessions", etc.
   const getBrowserName = (id: string): string => {
     if (id.startsWith('chrome_')) return 'Google Chrome';
     if (id.startsWith('edge_')) return 'Microsoft Edge';
@@ -54,7 +56,6 @@ export const Browsers: React.FC<BrowsersProps> = ({
     return 'Navegador';
   };
 
-  // Obtener lista única de navegadores detectados
   const detectedBrowsers = Array.from(new Set(browserItems.map(item => getBrowserName(item.id))));
 
   const selectedSize = browserItems
@@ -68,20 +69,38 @@ export const Browsers: React.FC<BrowsersProps> = ({
     }
   };
 
-  const renderItem = (item: CleanableItem) => {
+  const renderTableHead = () => (
+    <div className="table-header-row">
+      <div className="col-checkbox">
+        <input 
+          type="checkbox" 
+          className="cleaner-checkbox"
+          checked={browserItems.length > 0 && browserItems.every(i => i.selected)}
+          onChange={(e) => {
+            const checked = e.target.checked;
+            setItems(prev => prev.map(i => i.category.startsWith('browser_') ? { ...i, selected: checked } : i));
+          }}
+          disabled={isCleaning || scanStatus === 'scanning' || browserItems.length === 0}
+          aria-label="Seleccionar todos los navegadores"
+        />
+      </div>
+      <div className="col-name">Componente de Navegador</div>
+      <div className="col-risk">Riesgo</div>
+      <div className="col-size">Tamaño</div>
+      <div className="col-actions"></div>
+    </div>
+  );
+
+  const renderItemRow = (item: CleanableItem) => {
     const isExpanded = expandedItem === item.id;
     const isSensitive = item.risk_level === 'Sensitive';
     const isReview = item.risk_level === 'Review';
     const isSafe = item.risk_level === 'Safe';
 
     return (
-      <div 
-        key={item.id} 
-        className="cleaner-item"
-        style={isSensitive ? { borderLeft: '3px solid var(--danger)' } : {}}
-      >
-        <div className="cleaner-item-row">
-          <div className="cleaner-item-left">
+      <React.Fragment key={item.id}>
+        <div className={`table-row ${isExpanded ? 'expanded' : ''} ${item.selected ? 'selected' : ''} ${isSensitive ? 'row-sensitive' : ''}`}>
+          <div className="col-checkbox">
             <input 
               type="checkbox" 
               className="cleaner-checkbox"
@@ -90,31 +109,26 @@ export const Browsers: React.FC<BrowsersProps> = ({
               disabled={isCleaning}
               aria-label={`Seleccionar ${item.name}`}
             />
-            <div>
-              <div 
-                className="cleaner-item-name"
-                style={isSensitive ? { color: 'var(--danger)' } : {}}
-              >
-                {item.name}
-              </div>
-              <div className="cleaner-item-path" title={item.path}>
-                Ubicación del Perfil de Usuario
-              </div>
-            </div>
           </div>
-          <div className="cleaner-item-right">
-            <span className={`badge ${
-              isSafe ? 'badge-safe' : isReview ? 'badge-review' : 'badge-sensitive'
-            }`}>
+          <div className="col-name" onClick={() => toggleExpand(item.id)} style={{ cursor: 'pointer' }}>
+            <span className={`cleaner-item-name ${isSensitive ? 'sensitive-text' : ''}`}>{item.name}</span>
+            <span className="cleaner-item-path" title={item.path}>Ubicación del Perfil del Navegador</span>
+          </div>
+          <div className="col-risk">
+            <span className={`badge ${isSafe ? 'badge-safe' : isReview ? 'badge-review' : 'badge-sensitive'}`}>
               {isSafe ? 'Seguro' : isReview ? 'Revisión' : 'Sensible'}
             </span>
+          </div>
+          <div className="col-size">
             <span className="cleaner-item-size">{formatBytes(item.size)}</span>
+          </div>
+          <div className="col-actions">
             <button 
-              className="cleaner-details-btn"
+              className={`cleaner-details-btn ${isExpanded ? 'active' : ''}`}
               onClick={() => toggleExpand(item.id)}
+              title="Ver detalles"
             >
               <InfoIcon size={14} />
-              {isExpanded ? 'Ocultar' : 'Detalles'}
             </button>
           </div>
         </div>
@@ -122,33 +136,60 @@ export const Browsers: React.FC<BrowsersProps> = ({
         {isSensitive && (
           <div className="browser-session-warning">
             <WarningIcon size={14} />
-            <span>Eliminar este elemento puede cerrar sesiones activas o requerir volver a iniciar sesión.</span>
+            <span>Eliminar este elemento cerrará tus sesiones activas o requerirá volver a introducir contraseñas.</span>
           </div>
         )}
 
         {isExpanded && (
-          <div className="cleaner-details-panel">
-            <div><strong>Qué es:</strong> {item.description}</div>
-            <div style={{ marginTop: '6px' }}><strong>Impacto al eliminar:</strong> {item.impact}</div>
-            <div className="cleaner-details-grid">
-              <div>
-                <div className="cleaner-details-label">Nivel de riesgo</div>
-                <span className={`badge ${isSafe ? 'badge-safe' : isReview ? 'badge-review' : 'badge-sensitive'}`}>
-                  {isSafe ? 'Bajo' : isReview ? 'Moderado' : 'Alto (Sensible)'}
-                </span>
+          <div className="table-details-panel">
+            <div className="details-content">
+              <div className="details-text-group">
+                <span className="details-label">Qué es:</span>
+                <p>{item.description}</p>
               </div>
-              <div>
-                <div className="cleaner-details-label">Recomendación</div>
-                <span style={{ color: isSafe ? 'var(--accent-aqua)' : isReview ? 'var(--warning)' : 'var(--danger)' }}>
-                  {item.recommended_action}
-                </span>
+              <div className="details-text-group" style={{ marginTop: '8px' }}>
+                <span className="details-label">Impacto al eliminar:</span>
+                <p>{item.impact}</p>
+              </div>
+              <div className="details-meta-grid">
+                <div>
+                  <span className="details-label">Recomendación:</span>
+                  <span className={`details-rec-value ${isSafe ? 'safe' : isReview ? 'warning' : 'danger'}`}>
+                    {item.recommended_action}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
         )}
-      </div>
+      </React.Fragment>
     );
   };
+
+  const renderSkeletons = () => (
+    <div className="table-loading-container">
+      <div className="loading-bar-wrapper">
+        <div className="loading-bar-infinite"></div>
+      </div>
+      <div className="skeleton-table">
+        {[1, 2, 3].map(idx => (
+          <div key={idx} className="skeleton-row">
+            <div className="skeleton-cell col-checkbox"><div className="skeleton-box pulse"></div></div>
+            <div className="skeleton-cell col-name">
+              <div className="skeleton-line title pulse" style={{ width: '45%' }}></div>
+              <div className="skeleton-line path pulse" style={{ width: '60%' }}></div>
+            </div>
+            <div className="skeleton-cell col-risk"><div className="skeleton-box badge-pulse pulse"></div></div>
+            <div className="skeleton-cell col-size"><div className="skeleton-line size pulse" style={{ width: '40%' }}></div></div>
+            <div className="skeleton-cell col-actions"><div className="skeleton-box btn-pulse pulse"></div></div>
+          </div>
+        ))}
+      </div>
+      <div className="loading-status-text">
+        Buscando bases de datos, historiales y archivos temporales de navegadores instalados...
+      </div>
+    </div>
+  );
 
   return (
     <div>
@@ -156,47 +197,66 @@ export const Browsers: React.FC<BrowsersProps> = ({
         <div>
           <h2>Limpieza de Navegadores</h2>
           <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginTop: '4px' }}>
-            Gestiona de forma selectiva cachés, historiales y cookies. Los datos sensibles no están marcados por defecto.
+            Listado estructurado de cachés de navegadores. Los datos de sesión sensibles no están marcados por defecto.
           </p>
         </div>
-        <div style={{ display: 'flex', gap: '10px' }}>
-          <button 
-            className="btn btn-secondary" 
-            onClick={() => setItems(prev => prev.map(i => i.category.startsWith('browser_') ? { ...i, selected: false } : i))}
-            disabled={isCleaning}
-          >
-            Deseleccionar todo
-          </button>
-          <button 
-            className="btn btn-primary"
-            onClick={onCleanClick}
-            disabled={isCleaning || selectedSize === 0}
-          >
-            <TrashIcon size={16} />
-            {isCleaning ? 'Limpiando...' : `Limpiar ${formatBytes(selectedSize)}`}
-          </button>
-        </div>
+        
+        {scanStatus === 'done' && browserItems.length > 0 && (
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <button 
+              className="btn btn-secondary" 
+              onClick={() => setItems(prev => prev.map(i => i.category.startsWith('browser_') ? { ...i, selected: false } : i))}
+              disabled={isCleaning}
+            >
+              Deseleccionar todo
+            </button>
+            <button 
+              className="btn btn-primary"
+              onClick={onCleanClick}
+              disabled={isCleaning || selectedSize === 0}
+            >
+              <TrashIcon size={16} />
+              {isCleaning ? 'Limpiando...' : `Limpiar ${formatBytes(selectedSize)}`}
+            </button>
+          </div>
+        )}
       </div>
 
-      {browserItems.length === 0 ? (
+      {scanStatus === 'scanning' ? (
+        renderSkeletons()
+      ) : scanStatus === 'idle' ? (
+        <div className="card" style={{ textAlign: 'center', padding: '54px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
+          <p style={{ color: 'var(--text-muted)', fontSize: '14px', maxWidth: '460px', lineHeight: '1.5' }}>
+            Purgio necesita escanear los perfiles de tus navegadores para identificar elementos que se pueden limpiar.
+          </p>
+          {handleScan && (
+            <button className="btn btn-primary" onClick={handleScan}>
+              <RefreshIcon size={14} />
+              Iniciar Análisis Completo
+            </button>
+          )}
+        </div>
+      ) : browserItems.length === 0 ? (
         <div className="card" style={{ textAlign: 'center', padding: '48px 0' }}>
-          <p style={{ color: 'var(--text-muted)' }}>No se han escaneado datos de navegadores aún. Realiza un escaneo desde el Dashboard.</p>
+          <p style={{ color: 'var(--text-muted)' }}>Análisis completado o no se detectaron navegadores instalados compatibles.</p>
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
-          {detectedBrowsers.map(browserName => {
-            const currentBrowserItems = browserItems.filter(item => getBrowserName(item.id) === browserName);
-            if (currentBrowserItems.length === 0) return null;
-            
-            return (
-              <div key={browserName} className="cleaner-category-section">
-                <div className="cleaner-category-title">{browserName}</div>
-                <div className="cleaner-list">
-                  {currentBrowserItems.map(renderItem)}
+        <div className="cockpit-table">
+          {renderTableHead()}
+          
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', marginTop: '12px' }}>
+            {detectedBrowsers.map(browserName => {
+              const currentBrowserItems = browserItems.filter(item => getBrowserName(item.id) === browserName);
+              if (currentBrowserItems.length === 0) return null;
+              
+              return (
+                <div key={browserName} className="table-group-section">
+                  <div className="table-group-title">{browserName}</div>
+                  {currentBrowserItems.map(renderItemRow)}
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
       )}
     </div>
