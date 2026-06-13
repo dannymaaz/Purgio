@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 60" width="240" height="60">
+  <defs>
+    <linearGradient id="purgioLightGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#03738C" />
+      <stop offset="100%" stop-color="#00BC99" />
+    </linearGradient>
+  </defs>
+  
+  <g transform="translate(5, 5)">
+    <circle cx="25" cy="25" r="23" fill="#FFFFFF" stroke="url(#purgioLightGrad)" stroke-width="2" />
+    <path d="M19 14 H 27 C 32 14, 32 22, 27 22 H 23 V 36 H 19 V 14 Z" fill="none" stroke="url(#purgioLightGrad)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+    <path d="M32 12 L 33.5 15 L 36.5 15.5 L 33.5 16 L 32 19 L 30.5 16 L 27.5 15.5 L 30.5 15 Z" fill="#00BC99" />
+  </g>
+  
+  <text x="65" y="36" font-family="'Inter', 'Outfit', 'Segoe UI', sans-serif" font-weight="700" font-size="28" fill="#012E40" letter-spacing="0.5">
+    Purgio
+  </text>
+  
+  <text x="65" y="48" font-family="'Inter', 'Segoe UI', sans-serif" font-weight="400" font-size="10" fill="#03738C" letter-spacing="1">
+    SYSTEM CLEANER
+  </text>
+</svg>
