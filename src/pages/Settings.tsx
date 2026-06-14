@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import { getVersion } from '@tauri-apps/api/app';
 import purgioIcon from '../assets/logo/purgio-icon.svg';
 
 interface SettingsProps {
@@ -27,8 +28,17 @@ export const Settings: React.FC<SettingsProps> = ({
   confirmDisable,
   setConfirmDisable,
   showSensitive,
-  setShowSensitive
+  setShowSensitive,
+  onCheckUpdates,
+  latestVersion,
+  hasUpdate,
 }) => {
+  const [appVersion, setAppVersion] = useState<string>('...');
+
+  useEffect(() => {
+    getVersion().then(setAppVersion).catch(() => setAppVersion('2.0.0'));
+  }, []);
+
   return (
     <div>
       <div className="cleaner-header">
@@ -153,11 +163,38 @@ export const Settings: React.FC<SettingsProps> = ({
         </div>
       </div>
 
+      <div className="settings-section">
+        <h3 className="settings-section-title">Actualizaciones del Sistema</h3>
+        
+        <div className="settings-row">
+          <div className="settings-row-left">
+            <span className="settings-row-title">Buscar Actualizaciones</span>
+            <span className="settings-row-desc">
+              {hasUpdate 
+                ? `Nueva versión disponible: v${latestVersion}` 
+                : 'Verifica si tienes la versión más reciente instalada.'}
+            </span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            {hasUpdate && (
+              <span className="badge badge-review" style={{ textTransform: 'none' }}>v{latestVersion} disponible</span>
+            )}
+            <button 
+              className="btn btn-secondary" 
+              onClick={onCheckUpdates}
+              style={{ padding: '6px 12px', fontSize: '12px' }}
+            >
+              Buscar ahora
+            </button>
+          </div>
+        </div>
+      </div>
+
       <div className="settings-section" style={{ display: 'flex', justifyContent: 'center' }}>
         <div className="about-box">
           <img src={purgioIcon} alt="Purgio Icon" className="about-logo" />
           <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '20px', fontWeight: 'bold' }}>Purgio</h3>
-          <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>Versión v2.0.0 (Optimización y Seguridad)</p>
+          <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>Versión v{appVersion}</p>
           <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '12px' }}>
             Desarrollado para optimización segura y transparente de sistemas operativos.
           </p>

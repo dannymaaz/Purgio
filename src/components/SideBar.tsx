@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import { getVersion } from '@tauri-apps/api/app';
 import purgioLogo from '../assets/logo/purgio-logo.svg';
 import purgioLogoLight from '../assets/logo/purgio-logo-light.svg';
 import { 
@@ -17,6 +18,12 @@ interface SideBarProps {
 }
 
 export const SideBar: React.FC<SideBarProps> = ({ currentTab, setCurrentTab, theme }) => {
+  const [appVersion, setAppVersion] = useState<string>('...');
+
+  useEffect(() => {
+    getVersion().then(setAppVersion).catch(() => setAppVersion('2.0.0'));
+  }, []);
+
   const menuItems = [
     { id: 'dashboard', name: 'Dashboard', icon: <DashboardIcon /> },
     { id: 'cleaner', name: 'Limpieza de Archivos', icon: <CleanerIcon /> },
@@ -50,7 +57,8 @@ export const SideBar: React.FC<SideBarProps> = ({ currentTab, setCurrentTab, the
         </nav>
       </div>
       <div className="sidebar-footer">
-        <span>Versión 1.0.0</span>
+        {/* Versión leída dinámicamente desde Tauri — se actualiza automáticamente con cada build */}
+        <span>Versión v{appVersion}</span>
         <span>
           Creado por <span className="sidebar-footer-author">Danny Maaz</span>
         </span>
