@@ -17,6 +17,7 @@ interface DashboardProps {
   reviewCount: number;
   startupCount: number;
   bgCount: number;
+  lastScanTimestamp?: number | null;
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({

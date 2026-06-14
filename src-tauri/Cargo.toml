@@ -1,8 +1,8 @@
 [package]
-name = "tauri-app"
+name = "purgio"
 version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
+description = "Limpiador y optimizador de sistema seguro, minimalista y de bajo consumo."
+authors = ["Danny Maaz"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -26,4 +26,5 @@ sysinfo = "0.30"
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.52"
+
 

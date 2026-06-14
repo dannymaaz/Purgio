@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 
 // Componentes y Páginas
@@ -12,6 +12,32 @@ import { Startup, StartupItem } from './pages/Startup';
 import { Background, ProcessItem } from './pages/Background';
 import { Settings } from './pages/Settings';
 import { WarningIcon } from './components/Icons';
+import { ToastContainer, useToast } from './components/Toast';
+
+// Utilidades
+import { formatBytes } from './utils/format';
+import { addHistoryEntry } from './utils/history';
+
+// Tipos correctamente tipados desde el backend
+interface SystemStats {
+  total_ram: number;
+  used_ram: number;
+  cpu_usage: number;
+  total_disk: number;
+  free_disk: number;
+  os_name: string;
+  os_version?: string;
+  cpu_count?: number;
+  cpu_name?: string;
+}
+
+interface UpdateInfo {
+  latest_version: string;
+  current_version: string;
+  has_update: boolean;
+  download_url: string;
+  changelog: string;
+}
 
 export const App: React.FC = () => {
   // Pestaña activa
@@ -27,8 +53,8 @@ export const App: React.FC = () => {
   const [confirmDisable, setConfirmDisable] = useState<boolean>(true);
   const [showSensitive, setShowSensitive] = useState<boolean>(false);
 
-  // Estados de datos globales
-  const [systemStats, setSystemStats] = useState<any>(null);
+  // Estados de datos globales (tipado correcto, no 'any')
+  const [systemStats, setSystemStats] = useState<SystemStats | null>(null);
   const [cleanableItems, setCleanableItems] = useState<CleanableItem[]>([]);
   const [startupItems, setStartupItems] = useState<StartupItem[]>([]);
   const [backgroundProcesses, setBackgroundProcesses] = useState<ProcessItem[]>([]);
@@ -37,48 +63,49 @@ export const App: React.FC = () => {
   const [scanStatus, setScanStatus] = useState<'idle' | 'scanning' | 'done'>('idle');
   const [isCleaning, setIsCleaning] = useState<boolean>(false);
   const [isActioning, setIsActioning] = useState<boolean>(false);
+  const [lastScanTimestamp, setLastScanTimestamp] = useState<number | null>(null);
 
   // Estados de Modales
   const [showCleanModal, setShowCleanModal] = useState<boolean>(false);
   const [itemsToClean, setItemsToClean] = useState<CleanableItem[]>([]);
   const [showDisableModal, setShowDisableModal] = useState<boolean>(false);
   const [itemToDisable, setItemToDisable] = useState<StartupItem | null>(null);
-  const [cleanResultMsg, setCleanResultMsg] = useState<string | null>(null);
 
-  // Tema de Color Dinámico
+  // Sistema de actualización
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+  const [showUpdateModal, setShowUpdateModal] = useState<boolean>(false);
+  const [updateDismissed, setUpdateDismissed] = useState<boolean>(false);
+
+  // Toast notifications
+  const { toasts, addToast, removeToast } = useToast();
+
+  // Tema de Color Dinámico — se guarda siempre, incluso al elegir 'system'
   useEffect(() => {
     const root = document.documentElement;
     root.classList.remove('theme-dark', 'theme-light');
 
     const applyTheme = (t: 'dark' | 'light') => {
-      if (t === 'dark') {
-        root.classList.add('theme-dark');
-      } else {
-        root.classList.add('theme-light');
-      }
+      root.classList.add(t === 'dark' ? 'theme-dark' : 'theme-light');
     };
+
+    // Siempre persistir la elección del usuario
+    localStorage.setItem('purgio-theme', theme);
 
     if (theme === 'system') {
       const systemDark = window.matchMedia('(prefers-color-scheme: dark)');
       applyTheme(systemDark.matches ? 'dark' : 'light');
-
-      const listener = (e: MediaQueryListEvent) => {
-        applyTheme(e.matches ? 'dark' : 'light');
-      };
-      
+      const listener = (e: MediaQueryListEvent) => applyTheme(e.matches ? 'dark' : 'light');
       systemDark.addEventListener('change', listener);
       return () => systemDark.removeEventListener('change', listener);
     } else {
       applyTheme(theme);
     }
-
-    localStorage.setItem('purgio-theme', theme);
   }, [theme]);
 
-  // Carga inicial de datos de hardware
+  // Carga inicial de datos de hardware (intervalo aumentado a 8s para reducir consumo de RAM)
   const fetchSystemStats = useCallback(async () => {
     try {
-      const stats = await invoke<any>('get_system_stats');
+      const stats = await invoke<SystemStats>('get_system_stats');
       setSystemStats(stats);
     } catch (e) {
       console.error('Error al obtener estadísticas del sistema:', e);
@@ -87,13 +114,39 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     fetchSystemStats();
-    
-    // Timer para refrescar estadísticas dinámicamente cada 5 segundos en background
-    const interval = setInterval(fetchSystemStats, 5000);
+    // Intervalo de 15s — pausar cuando la ventana está oculta para ahorrar RAM
+    const interval = setInterval(() => {
+      if (!document.hidden) {
+        fetchSystemStats();
+      }
+    }, 15000);
     return () => clearInterval(interval);
   }, [fetchSystemStats]);
 
-  // Cargar procesos en segundo plano y programas de arranque al entrar a sus pestañas
+  // Verificar actualizaciones al iniciar (solo una vez)
+  const checkForUpdates = useCallback(async () => {
+    try {
+      const info = await invoke<UpdateInfo>('check_for_updates');
+      setUpdateInfo(info);
+      if (info.has_update && !updateDismissed) {
+        addToast(
+          `Nueva versión ${info.latest_version} disponible. Ve a Configuración para actualizar.`,
+          'info',
+          8000
+        );
+      }
+    } catch (e) {
+      console.error('Error al verificar actualizaciones:', e);
+    }
+  }, [updateDismissed, addToast]);
+
+  useEffect(() => {
+    // Verificar actualizaciones 3 segundos después de iniciar (no bloqueante)
+    const timer = setTimeout(checkForUpdates, 3000);
+    return () => clearTimeout(timer);
+  }, [checkForUpdates]);
+
+  // Cargar procesos en segundo plano y arranque al entrar a sus pestañas
   useEffect(() => {
     if (currentTab === 'startup') {
       invoke<StartupItem[]>('get_startup_items')
@@ -106,153 +159,179 @@ export const App: React.FC = () => {
     }
   }, [currentTab]);
 
-  // Escaneo Global
-  const handleScan = async () => {
-    setScanStatus('scanning');
-    setCurrentTab('cleaner');
-    
-    try {
-      // Escaneo real de archivos del sistema
-      const sysFiles = await invoke<CleanableItem[]>('scan_system_files');
-      
-      // Escaneo de navegadores si está habilitado o configurado
-      let browserFiles: CleanableItem[] = [];
-      if (showSensitive) {
-        browserFiles = await invoke<CleanableItem[]>('scan_browser_files');
-      } else {
-        // Si no se quieren mostrar sensibles, escaneamos pero filtramos cookies y sesiones
-        const allBrowsers = await invoke<CleanableItem[]>('scan_browser_files');
-        browserFiles = allBrowsers.filter(i => i.risk_level !== 'Sensitive');
+  // Auto-refresh de procesos en segundo plano cada 20s cuando estamos en esa pestaña
+  useEffect(() => {
+    if (currentTab !== 'background') return;
+    const interval = setInterval(async () => {
+      if (!document.hidden) {
+        try {
+          const bgs = await invoke<ProcessItem[]>('get_background_apps');
+          setBackgroundProcesses(bgs);
+        } catch {}
       }
+    }, 20000);
+    return () => clearInterval(interval);
+  }, [currentTab]);
 
-      // Concatenar
+  // Función de escaneo compartida (evita duplicación)
+  const runScan = useCallback(async () => {
+    try {
+      const sysFiles = await invoke<CleanableItem[]>('scan_system_files');
+      const allBrowsers = await invoke<CleanableItem[]>('scan_browser_files');
+      const browserFiles = showSensitive
+        ? allBrowsers
+        : allBrowsers.filter(i => i.risk_level !== 'Sensitive');
+
       setCleanableItems([...sysFiles, ...browserFiles]);
-      
-      // Actualizar conteos del arranque y background para el resumen
+
       const startups = await invoke<StartupItem[]>('get_startup_items');
       setStartupItems(startups);
-      
       const bgs = await invoke<ProcessItem[]>('get_background_apps');
       setBackgroundProcesses(bgs);
 
-      // Pequeño retardo artificial de 1.2 segundos para una UX de análisis pulida y premium
-      setTimeout(() => {
-        setScanStatus('done');
-      }, 1200);
-      
+      return true;
     } catch (e) {
       console.error('Error en el escaneo:', e);
-      setScanStatus('idle');
+      return false;
     }
-  };
+  }, [showSensitive]);
+
+  // Escaneo Global
+  const handleScan = useCallback(async () => {
+    setScanStatus('scanning');
+    setCurrentTab('cleaner');
+
+    const success = await runScan();
+
+    // Pequeño retardo de 1.2s para UX de análisis premium
+    setTimeout(() => {
+      if (success) {
+        setScanStatus('done');
+        setLastScanTimestamp(Date.now());
+      } else {
+        setScanStatus('idle');
+        addToast('Error al analizar el sistema. Intenta de nuevo.', 'error');
+      }
+    }, 1200);
+  }, [runScan, addToast]);
 
   // Limpieza de Elementos Seleccionados
-  const executeClean = async (selected: CleanableItem[]) => {
+  const executeClean = useCallback(async (selected: CleanableItem[]) => {
     setIsCleaning(true);
-    setCleanResultMsg(null);
     try {
       const bytesFreed = await invoke<number>('clean_items', { items: selected });
-      
-      const formatBytes = (bytes: number): string => {
-        if (bytes === 0) return '0 Bytes';
-        const k = 1024;
-        const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-        const i = Math.floor(Math.log(bytes) / Math.log(k));
-        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-      };
 
-      setCleanResultMsg(`Limpieza completada de forma exitosa. Se liberaron ${formatBytes(bytesFreed)} de espacio en disco.`);
-      
-      // Refrescar el escaneo inmediatamente
-      const sysFiles = await invoke<CleanableItem[]>('scan_system_files');
-      let browserFiles: CleanableItem[] = [];
-      if (showSensitive) {
-        browserFiles = await invoke<CleanableItem[]>('scan_browser_files');
-      } else {
-        const allBrowsers = await invoke<CleanableItem[]>('scan_browser_files');
-        browserFiles = allBrowsers.filter(i => i.risk_level !== 'Sensitive');
-      }
-      setCleanableItems([...sysFiles, ...browserFiles]);
+      // Guardar en historial
+      addHistoryEntry(bytesFreed, selected.length);
+
+      addToast(
+        `✓ Limpieza completada. Se liberaron ${formatBytes(bytesFreed)} de espacio.`,
+        'success',
+        5000
+      );
+
+      // Refrescar escaneo inmediatamente
+      await runScan();
       fetchSystemStats();
     } catch (e) {
       console.error('Error durante la limpieza:', e);
-      setCleanResultMsg(`Error durante la limpieza: ${e}`);
+      addToast(`Error durante la limpieza: ${String(e)}`, 'error', 6000);
     } finally {
       setIsCleaning(false);
     }
-  };
+  }, [runScan, fetchSystemStats, addToast]);
 
-  const handleCleanTrigger = (selected: CleanableItem[]) => {
+  const handleCleanTrigger = useCallback((selected: CleanableItem[]) => {
     if (confirmDelete) {
       setItemsToClean(selected);
       setShowCleanModal(true);
     } else {
       executeClean(selected);
     }
-  };
+  }, [confirmDelete, executeClean]);
 
-  // Gestión de Arranque (Desactivar/Restaurar)
-  const handleDisableTrigger = (item: StartupItem) => {
+  // Gestión de Arranque
+  const handleDisableTrigger = useCallback((item: StartupItem) => {
     if (confirmDisable) {
       setItemToDisable(item);
       setShowDisableModal(true);
     } else {
       executeDisable(item);
     }
-  };
+  }, [confirmDisable]);
 
-  const executeDisable = async (item: StartupItem) => {
+  const executeDisable = useCallback(async (item: StartupItem) => {
     setIsActioning(true);
     try {
       await invoke('disable_startup', { id: item.id, locationKey: item.location_key });
-      // Refrescar lista de arranque
       const startups = await invoke<StartupItem[]>('get_startup_items');
       setStartupItems(startups);
+      addToast(`"${item.name}" desactivado del arranque.`, 'success');
     } catch (e) {
       console.error('Error al desactivar el programa de arranque:', e);
+      addToast(`No se pudo desactivar "${item.name}".`, 'error');
     } finally {
       setIsActioning(false);
     }
-  };
+  }, [addToast]);
 
-  const handleEnable = async (item: StartupItem) => {
+  const handleEnable = useCallback(async (item: StartupItem) => {
     setIsActioning(true);
     try {
-      await invoke('enable_startup', { 
-        name: item.name, 
+      await invoke('enable_startup', {
+        name: item.name,
         locationKey: item.location_key,
-        originalCommand: "" 
+        originalCommand: item.command || ''
       });
-      // Refrescar lista
       const startups = await invoke<StartupItem[]>('get_startup_items');
       setStartupItems(startups);
+      addToast(`"${item.name}" activado al inicio.`, 'success');
     } catch (e) {
       console.error('Error al activar el programa de arranque:', e);
+      addToast(`No se pudo activar "${item.name}".`, 'error');
     } finally {
       setIsActioning(false);
     }
-  };
+  }, [addToast]);
 
   // Finalizar procesos de segundo plano
-  const handleKillProcess = async (process: ProcessItem) => {
+  const handleKillProcess = useCallback(async (process: ProcessItem) => {
     setIsActioning(true);
     try {
       await invoke('kill_background_process', { pid: process.pid });
-      // Refrescar lista de procesos
       const bgs = await invoke<ProcessItem[]>('get_background_apps');
       setBackgroundProcesses(bgs);
       fetchSystemStats();
+      addToast(`Proceso "${process.name}" finalizado.`, 'success');
     } catch (e) {
       console.error('Error al cerrar el proceso de segundo plano:', e);
+      addToast(`No se pudo cerrar "${process.name}". Puede requerir permisos elevados.`, 'error');
     } finally {
       setIsActioning(false);
     }
-  };
+  }, [fetchSystemStats, addToast]);
 
-  // Datos globales del resumen
-  const potentialSpace = cleanableItems.reduce((sum, item) => sum + (item.selected ? item.size : 0), 0);
-  const safeCount = cleanableItems.filter(item => item.risk_level === 'Safe' && !item.category.startsWith('browser_')).length;
-  const reviewCount = cleanableItems.filter(item => item.risk_level === 'Review' && !item.category.startsWith('browser_')).length;
+  // Datos globales del resumen (memoizados para no recalcular en cada render)
+  const potentialSpace = useMemo(
+    () => cleanableItems.reduce((sum, item) => sum + (item.selected ? item.size : 0), 0),
+    [cleanableItems]
+  );
+  const safeCount = useMemo(
+    () => cleanableItems.filter(item => item.risk_level === 'Safe' && !item.category.startsWith('browser_')).length,
+    [cleanableItems]
+  );
+  const reviewCount = useMemo(
+    () => cleanableItems.filter(item => item.risk_level === 'Review' && !item.category.startsWith('browser_')).length,
+    [cleanableItems]
+  );
+
+  // Calcular tema para sidebar
+  const getThemeClass = useCallback((): 'dark' | 'light' => {
+    if (theme === 'system') {
+      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+    return theme;
+  }, [theme]);
 
   const renderActiveTab = () => {
     switch (currentTab) {
@@ -267,6 +346,7 @@ export const App: React.FC = () => {
             reviewCount={reviewCount}
             startupCount={startupItems.length}
             bgCount={backgroundProcesses.length}
+            lastScanTimestamp={lastScanTimestamp}
           />
         );
       case 'cleaner':
@@ -321,6 +401,9 @@ export const App: React.FC = () => {
             setConfirmDisable={setConfirmDisable}
             showSensitive={showSensitive}
             setShowSensitive={setShowSensitive}
+            onCheckUpdates={checkForUpdates}
+            hasUpdate={updateInfo?.has_update}
+            latestVersion={updateInfo?.latest_version}
           />
         );
       default:
@@ -328,61 +411,111 @@ export const App: React.FC = () => {
     }
   };
 
-  const getThemeClass = (): string => {
-    // Si es system, la clase ya se calcula y aplica a html en el useEffect anterior.
-    // Solo retornamos la correspondiente para el SideBar logo
-    if (theme === 'system') {
-      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-    }
-    return theme;
-  };
+  const hasUpdate = updateInfo?.has_update && !updateDismissed;
 
   return (
     <div className="app-container">
       <Splash />
-      <TitleBar />
-      
+      <TitleBar systemStats={systemStats} hasUpdate={hasUpdate} />
+
+      {/* Banner de actualización disponible */}
+      {hasUpdate && updateInfo && (
+        <div className="update-banner">
+          <div className="update-banner-text">
+            <span>🔔 Nueva versión disponible:</span>
+            <span className="update-banner-version">{updateInfo.latest_version}</span>
+            <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>(instalada: {updateInfo.current_version})</span>
+          </div>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <button
+              className="update-btn"
+              onClick={() => setShowUpdateModal(true)}
+            >
+              Ver actualización
+            </button>
+            <button
+              className="update-dismiss"
+              onClick={() => setUpdateDismissed(true)}
+              aria-label="Ignorar actualización"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="app-layout">
-        <SideBar 
-          currentTab={currentTab} 
-          setCurrentTab={setCurrentTab} 
-          theme={getThemeClass() as any} 
+        <SideBar
+          currentTab={currentTab}
+          setCurrentTab={setCurrentTab}
+          theme={getThemeClass()}
         />
-        
+
         <main className="main-content">
           {renderActiveTab()}
         </main>
       </div>
 
-      {/* Modal de confirmación para borrado de archivos */}
+      {/* Toast notifications */}
+      <ToastContainer toasts={toasts} removeToast={removeToast} />
+
+      {/* Modal de confirmación para borrado de archivos (mejorado con lista) */}
       {showCleanModal && (
         <div className="modal-overlay" onClick={() => setShowCleanModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header danger">
               <WarningIcon size={20} className="danger" />
-              Confirmar Eliminación Seguro
+              Confirmar Eliminación
             </div>
             <div className="modal-body">
-              Estás a punto de eliminar de forma permanente {itemsToClean.length} elementos seleccionados. 
-              Esta acción liberará espacio en disco de inmediato pero es irreversible. ¿Deseas continuar?
+              <p style={{ marginBottom: '12px' }}>
+                Se eliminarán <strong>{itemsToClean.length} elementos</strong> liberando{' '}
+                <strong style={{ color: 'var(--accent-aqua)' }}>
+                  {formatBytes(itemsToClean.reduce((sum, i) => sum + i.size, 0))}
+                </strong>{' '}
+                de espacio. Esta acción es irreversible.
+              </p>
+              {/* Lista de los primeros 5 elementos */}
+              <div style={{
+                maxHeight: '140px',
+                overflowY: 'auto',
+                border: '1px solid var(--border-color)',
+                borderRadius: '6px',
+                padding: '8px 12px',
+                fontSize: '12px',
+                color: 'var(--text-secondary)',
+                background: 'var(--bg-secondary)'
+              }}>
+                {itemsToClean.slice(0, 6).map((item, i) => (
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', borderBottom: '1px solid var(--border-color)' }}>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: '8px' }}>{item.name}</span>
+                    <span style={{ color: 'var(--text-muted)', flexShrink: 0 }}>{formatBytes(item.size)}</span>
+                  </div>
+                ))}
+                {itemsToClean.length > 6 && (
+                  <div style={{ color: 'var(--text-muted)', padding: '3px 0', fontStyle: 'italic' }}>
+                    …y {itemsToClean.length - 6} más
+                  </div>
+                )}
+              </div>
             </div>
             <div className="modal-actions">
-              <button 
-                className="btn btn-secondary" 
+              <button
+                className="btn btn-secondary"
                 onClick={() => setShowCleanModal(false)}
                 disabled={isCleaning}
               >
                 Cancelar
               </button>
-              <button 
-                className="btn btn-danger" 
+              <button
+                className="btn btn-danger"
                 onClick={() => {
                   executeClean(itemsToClean);
                   setShowCleanModal(false);
                 }}
                 disabled={isCleaning}
               >
-                Proceder a limpiar
+                {isCleaning ? 'Limpiando...' : 'Limpiar definitivamente'}
               </button>
             </div>
           </div>
@@ -395,53 +528,98 @@ export const App: React.FC = () => {
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <WarningIcon size={20} className="warning" />
-              Desactivar Arranque
+              Desactivar del Arranque
             </div>
             <div className="modal-body">
-              ¿Seguro que deseas desactivar el inicio automático de <strong>{itemToDisable.name}</strong>? 
-              El programa ya no se ejecutará en segundo plano al encender el equipo, pero podrás abrirlo manualmente en cualquier momento.
+              <p>
+                ¿Desactivar el inicio automático de <strong>{itemToDisable.name}</strong>?
+              </p>
+              <p style={{ marginTop: '8px', fontSize: '13px', color: 'var(--text-secondary)' }}>
+                El programa no se ejecutará al encender el equipo. Podrás abrirlo manualmente y volver a activarlo en cualquier momento.
+              </p>
+              {!itemToDisable.is_safe_to_disable && (
+                <p style={{ marginTop: '8px', fontSize: '13px', color: 'var(--warning)', background: 'var(--warning-bg)', padding: '8px', borderRadius: '6px' }}>
+                  ⚠️ Este programa puede estar relacionado con drivers o seguridad del sistema. Desactivarlo con cuidado.
+                </p>
+              )}
             </div>
             <div className="modal-actions">
-              <button 
-                className="btn btn-secondary" 
+              <button
+                className="btn btn-secondary"
                 onClick={() => setShowDisableModal(false)}
                 disabled={isActioning}
               >
                 Cancelar
               </button>
-              <button 
-                className="btn btn-primary" 
+              <button
+                className="btn btn-primary"
                 onClick={() => {
                   executeDisable(itemToDisable);
                   setShowDisableModal(false);
                 }}
                 disabled={isActioning}
               >
-                Confirmar Desactivación
+                Desactivar
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Alerta toast sutil e informativa de resultados de limpieza */}
-      {cleanResultMsg && (
-        <div className="modal-overlay" onClick={() => setCleanResultMsg(null)}>
+      {/* Modal de actualización disponible */}
+      {showUpdateModal && updateInfo && (
+        <div className="modal-overlay" onClick={() => setShowUpdateModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header" style={{ color: 'var(--accent-aqua)' }}>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-                <polyline points="22 4 12 14.01 9 11.01" />
-              </svg>
-              Acción Completada
+              🔔 Nueva versión disponible
             </div>
             <div className="modal-body">
-              {cleanResultMsg}
+              <p>
+                <strong style={{ color: 'var(--accent-aqua)' }}>Purgio {updateInfo.latest_version}</strong>{' '}
+                está disponible. La versión instalada actualmente es {updateInfo.current_version}.
+              </p>
+              {updateInfo.changelog && (
+                <div style={{
+                  marginTop: '12px',
+                  padding: '10px',
+                  borderRadius: '6px',
+                  background: 'var(--bg-secondary)',
+                  border: '1px solid var(--border-color)',
+                  fontSize: '12px',
+                  color: 'var(--text-secondary)',
+                  maxHeight: '120px',
+                  overflowY: 'auto'
+                }}>
+                  {updateInfo.changelog}
+                </div>
+              )}
+              <p style={{ marginTop: '12px', fontSize: '13px', color: 'var(--text-secondary)' }}>
+                Al actualizar, Purgio descargará el instalador y se reiniciará automáticamente. ¿Deseas continuar?
+              </p>
             </div>
             <div className="modal-actions">
-              <button className="btn btn-primary" onClick={() => setCleanResultMsg(null)}>
-                Entendido
+              <button
+                className="btn btn-secondary"
+                onClick={() => { setShowUpdateModal(false); setUpdateDismissed(true); }}
+              >
+                Ahora no
               </button>
+              {updateInfo.download_url ? (
+                <a
+                  href={updateInfo.download_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn btn-primary"
+                  style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                  onClick={() => setShowUpdateModal(false)}
+                >
+                  Descargar actualización
+                </a>
+              ) : (
+                <button className="btn btn-primary" disabled>
+                  Sin URL de descarga
+                </button>
+              )}
             </div>
           </div>
         </div>

@@ -12,6 +12,9 @@ interface SettingsProps {
   setConfirmDisable: (val: boolean) => void;
   showSensitive: boolean;
   setShowSensitive: (val: boolean) => void;
+  onCheckUpdates?: () => void;
+  latestVersion?: string;
+  hasUpdate?: boolean;
 }
 
 export const Settings: React.FC<SettingsProps> = ({

@@ -3,6 +3,7 @@ mod scanner;
 mod cleaner;
 mod startup;
 mod system;
+mod updater;
 
 use scanner::CleanableItem;
 use startup::StartupItem;
@@ -31,9 +32,11 @@ fn clean_items(items: Vec<CleanableItem>) -> Result<u64, String> {
     for item in items {
         if item.selected {
             let is_sensitive = matches!(item.risk_level, safety::RiskLevel::Sensitive);
-            match cleaner::clean_path_safely(&item.path, is_sensitive) {
-                Ok(bytes) => total_freed += bytes,
-                Err(e) => errors.push(format!("{}: {}", item.name, e)),
+            for path in &item.paths {
+                match cleaner::clean_path_safely(path, is_sensitive) {
+                    Ok(bytes) => total_freed += bytes,
+                    Err(e) => errors.push(format!("{}: {}", item.name, e)),
+                }
             }
         }
     }
@@ -74,7 +77,19 @@ fn kill_background_process(pid: u32) -> Result<(), String> {
     system::kill_process(pid)
 }
 
+/// Mata TODAS las instancias de un proceso por nombre (browsers son multi-proceso)
+#[tauri::command]
+fn kill_background_process_group(name: String) -> Result<usize, String> {
+    system::kill_process_group(&name)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+
+#[tauri::command]
+fn check_for_updates() -> updater::UpdateInfo {
+    updater::check_for_updates()
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -87,8 +102,14 @@ pub fn run() {
             disable_startup,
             enable_startup,
             get_background_apps,
-            kill_background_process
+            kill_background_process,
+            kill_background_process_group,
+            check_for_updates
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
+
+
+
+

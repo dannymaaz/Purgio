@@ -5,7 +5,7 @@ export interface CleanableItem {
   id: string;
   name: string;
   size: number;
-  path: string;
+  paths: string[];
   risk_level: 'Safe' | 'Review' | 'Sensitive' | 'Critical';
   description: string;
   impact: string;
@@ -123,7 +123,7 @@ export const Cleaner: React.FC<CleanerProps> = ({
           </div>
           <div className="col-name" onClick={() => toggleExpand(item.id)} style={{ cursor: 'pointer' }}>
             <span className="cleaner-item-name">{item.name}</span>
-            <span className="cleaner-item-path" title={item.path}>{item.path}</span>
+            <span className="cleaner-item-path" title={item.paths.join(', ')}>{item.paths.length > 0 ? item.paths[0] : 'Varias ubicaciones'}</span>
           </div>
           <div className="col-risk">
             <span className={`badge ${item.risk_level === 'Safe' ? 'badge-safe' : 'badge-review'}`}>

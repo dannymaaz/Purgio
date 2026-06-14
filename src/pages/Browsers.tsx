@@ -112,7 +112,18 @@ export const Browsers: React.FC<BrowsersProps> = ({
           </div>
           <div className="col-name" onClick={() => toggleExpand(item.id)} style={{ cursor: 'pointer' }}>
             <span className={`cleaner-item-name ${isSensitive ? 'sensitive-text' : ''}`}>{item.name}</span>
-            <span className="cleaner-item-path" title={item.path}>Ubicación del Perfil del Navegador</span>
+            <span className="cleaner-item-path" title={item.paths.join('\n')}>
+                {item.paths.length > 0
+                  ? item.paths[0].length > 55
+                    ? '...' + item.paths[0].slice(-52)
+                    : item.paths[0]
+                  : 'Sin ruta especificada'}
+                {item.paths.length > 1 && (
+                  <span style={{ color: 'var(--accent-aqua)', marginLeft: '4px', fontSize: '10px' }}>
+                    +{item.paths.length - 1} más
+                  </span>
+                )}
+              </span>
           </div>
           <div className="col-risk">
             <span className={`badge ${isSafe ? 'badge-safe' : isReview ? 'badge-review' : 'badge-sensitive'}`}>

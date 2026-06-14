@@ -1285,4 +1285,665 @@ input:checked + .slider:before {
   cursor: not-allowed;
 }
 
+/* ============================================
+   TOAST NOTIFICATIONS
+   ============================================ */
+.toast-container {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 9999;
+  pointer-events: none;
+}
 
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background-color: var(--bg-card);
+  backdrop-filter: blur(12px);
+  box-shadow: var(--shadow-md);
+  min-width: 280px;
+  max-width: 420px;
+  pointer-events: all;
+  transform: translateX(120%);
+  opacity: 0;
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.3s ease;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.toast.toast-visible {
+  transform: translateX(0);
+  opacity: 1;
+}
+
+.toast-icon {
+  font-size: 14px;
+  font-weight: bold;
+  flex-shrink: 0;
+  width: 20px;
+  text-align: center;
+}
+
+.toast-message {
+  flex: 1;
+  line-height: 1.4;
+}
+
+.toast-close {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 11px;
+  padding: 2px 4px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  transition: color 0.15s ease;
+}
+
+.toast-close:hover {
+  color: var(--text-primary);
+}
+
+.toast-success { border-left: 3px solid var(--accent-aqua); }
+.toast-success .toast-icon { color: var(--accent-aqua); }
+
+.toast-error { border-left: 3px solid var(--danger); }
+.toast-error .toast-icon { color: var(--danger); }
+
+.toast-warning { border-left: 3px solid var(--warning); }
+.toast-warning .toast-icon { color: var(--warning); }
+
+.toast-info { border-left: 3px solid var(--accent-teal); }
+.toast-info .toast-icon { color: var(--accent-teal); }
+
+/* ============================================
+   PROGRESS BAR COMPONENT
+   ============================================ */
+.progress-bar-wrapper {
+  width: 100%;
+  height: 5px;
+  background-color: var(--border-color);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-top: 6px;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.4s ease;
+}
+
+.progress-bar-fill.good { background-color: var(--accent-aqua); }
+.progress-bar-fill.warning { background-color: var(--warning); }
+.progress-bar-fill.danger { background-color: var(--danger); }
+
+/* ============================================
+   HEALTH INDICATOR (TitleBar)
+   ============================================ */
+.health-indicator {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.health-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.health-dot.good { background-color: var(--accent-aqua); box-shadow: 0 0 6px var(--accent-aqua-glow); }
+.health-dot.warning { background-color: var(--warning); }
+.health-dot.danger { background-color: var(--danger); animation: pulse-danger 1.5s ease-in-out infinite; }
+
+@keyframes pulse-danger {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* ============================================
+   UPDATE BANNER
+   ============================================ */
+.update-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: linear-gradient(135deg, rgba(3, 115, 140, 0.15), rgba(0, 188, 153, 0.1));
+  border-bottom: 1px solid var(--border-color);
+  font-size: 12px;
+  color: var(--text-secondary);
+  gap: 12px;
+}
+
+.update-banner-text {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.update-banner-version {
+  font-weight: 600;
+  color: var(--accent-aqua);
+}
+
+.update-btn {
+  background: var(--accent-aqua);
+  color: #000;
+  border: none;
+  padding: 4px 12px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: opacity 0.15s ease;
+}
+
+.update-btn:hover { opacity: 0.85; }
+
+.update-dismiss {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 6px;
+}
+
+/* ============================================
+   STICKY CLEAN TOOLBAR (Cleaner)
+   ============================================ */
+.clean-sticky-bar {
+  position: sticky;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background-color: var(--bg-secondary);
+  border-top: 1px solid var(--border-color);
+  gap: 16px;
+  z-index: 10;
+  backdrop-filter: blur(8px);
+}
+
+.clean-sticky-bar-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+}
+
+.clean-sticky-bar-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.clean-sticky-bar-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent-aqua);
+}
+
+/* ============================================
+   FILTER TABS (Startup & Background)
+   ============================================ */
+.filter-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 16px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 4px;
+}
+
+.filter-tab {
+  flex: 1;
+  padding: 6px 12px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.filter-tab:hover {
+  color: var(--text-secondary);
+  background: var(--bg-card-hover);
+}
+
+.filter-tab.active {
+  background: var(--accent-teal);
+  color: #fff;
+  font-weight: 600;
+}
+
+.filter-tab .tab-count {
+  display: inline-block;
+  background: rgba(255,255,255,0.2);
+  border-radius: 10px;
+  padding: 0 5px;
+  font-size: 10px;
+  margin-left: 4px;
+}
+
+.filter-tab:not(.active) .tab-count {
+  background: var(--border-color);
+  color: var(--text-muted);
+}
+
+/* ============================================
+   DASHBOARD ENHANCEMENTS
+   ============================================ */
+.dashboard-stat-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.dashboard-stat-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.dashboard-stat-value {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-family: var(--font-display);
+}
+
+.scan-timestamp {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+/* ============================================
+   PROCESS USAGE BARS
+   ============================================ */
+.process-usage-bar {
+  width: 60px;
+  height: 4px;
+  background: var(--border-color);
+  border-radius: 2px;
+  overflow: hidden;
+  display: inline-block;
+  vertical-align: middle;
+  margin-left: 4px;
+}
+
+.process-usage-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent-aqua);
+  transition: width 0.4s ease;
+}
+
+.process-usage-fill.cpu-fill { background: var(--accent-teal); }
+.process-usage-fill.ram-fill { background: var(--accent-aqua); }
+.process-usage-fill.high { background: var(--warning); }
+.process-usage-fill.critical { background: var(--danger); }
+
+/* ============================================
+   SKELETON LOADER
+   ============================================ */
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+/* ============================================
+   TOAST NOTIFICATIONS
+   ============================================ */
+.toast-container {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 9999;
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background-color: var(--bg-card);
+  backdrop-filter: blur(12px);
+  box-shadow: var(--shadow-md);
+  min-width: 280px;
+  max-width: 420px;
+  pointer-events: all;
+  transform: translateX(120%);
+  opacity: 0;
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.3s ease;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.toast.toast-visible {
+  transform: translateX(0);
+  opacity: 1;
+}
+
+.toast-icon {
+  font-size: 14px;
+  font-weight: bold;
+  flex-shrink: 0;
+  width: 20px;
+  text-align: center;
+}
+
+.toast-message {
+  flex: 1;
+  line-height: 1.4;
+}
+
+.toast-close {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 11px;
+  padding: 2px 4px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  transition: color 0.15s ease;
+}
+
+.toast-close:hover {
+  color: var(--text-primary);
+}
+
+.toast-success { border-left: 3px solid var(--accent-aqua); }
+.toast-success .toast-icon { color: var(--accent-aqua); }
+
+.toast-error { border-left: 3px solid var(--danger); }
+.toast-error .toast-icon { color: var(--danger); }
+
+.toast-warning { border-left: 3px solid var(--warning); }
+.toast-warning .toast-icon { color: var(--warning); }
+
+.toast-info { border-left: 3px solid var(--accent-teal); }
+.toast-info .toast-icon { color: var(--accent-teal); }
+
+/* ============================================
+   PROGRESS BAR COMPONENT
+   ============================================ */
+.progress-bar-wrapper {
+  width: 100%;
+  height: 5px;
+  background-color: var(--border-color);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-top: 6px;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.4s ease;
+}
+
+.progress-bar-fill.good { background-color: var(--accent-aqua); }
+.progress-bar-fill.warning { background-color: var(--warning); }
+.progress-bar-fill.danger { background-color: var(--danger); }
+
+/* ============================================
+   HEALTH INDICATOR (TitleBar)
+   ============================================ */
+.health-indicator {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.health-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.health-dot.good { background-color: var(--accent-aqua); box-shadow: 0 0 6px var(--accent-aqua-glow); }
+.health-dot.warning { background-color: var(--warning); }
+.health-dot.danger { background-color: var(--danger); animation: pulse-danger 1.5s ease-in-out infinite; }
+
+@keyframes pulse-danger {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* ============================================
+   UPDATE BANNER
+   ============================================ */
+.update-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: linear-gradient(135deg, rgba(3, 115, 140, 0.15), rgba(0, 188, 153, 0.1));
+  border-bottom: 1px solid var(--border-color);
+  font-size: 12px;
+  color: var(--text-secondary);
+  gap: 12px;
+}
+
+.update-banner-text {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.update-banner-version {
+  font-weight: 600;
+  color: var(--accent-aqua);
+}
+
+.update-btn {
+  background: var(--accent-aqua);
+  color: #000;
+  border: none;
+  padding: 4px 12px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: opacity 0.15s ease;
+}
+
+.update-btn:hover { opacity: 0.85; }
+
+.update-dismiss {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 6px;
+}
+
+/* ============================================
+   STICKY CLEAN TOOLBAR (Cleaner)
+   ============================================ */
+.clean-sticky-bar {
+  position: sticky;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background-color: var(--bg-secondary);
+  border-top: 1px solid var(--border-color);
+  gap: 16px;
+  z-index: 10;
+  backdrop-filter: blur(8px);
+}
+
+.clean-sticky-bar-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+}
+
+.clean-sticky-bar-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.clean-sticky-bar-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent-aqua);
+}
+
+/* ============================================
+   FILTER TABS (Startup & Background)
+   ============================================ */
+.filter-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 16px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 4px;
+}
+
+.filter-tab {
+  flex: 1;
+  padding: 6px 12px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.filter-tab:hover {
+  color: var(--text-secondary);
+  background: var(--bg-card-hover);
+}
+
+.filter-tab.active {
+  background: var(--accent-teal);
+  color: #fff;
+  font-weight: 600;
+}
+
+.filter-tab .tab-count {
+  display: inline-block;
+  background: rgba(255,255,255,0.2);
+  border-radius: 10px;
+  padding: 0 5px;
+  font-size: 10px;
+  margin-left: 4px;
+}
+
+.filter-tab:not(.active) .tab-count {
+  background: var(--border-color);
+  color: var(--text-muted);
+}
+
+/* ============================================
+   DASHBOARD ENHANCEMENTS
+   ============================================ */
+.dashboard-stat-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.dashboard-stat-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.dashboard-stat-value {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-family: var(--font-display);
+}
+
+.scan-timestamp {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+/* ============================================
+   PROCESS USAGE BARS
+   ============================================ */
+.process-usage-bar {
+  width: 60px;
+  height: 4px;
+  background: var(--border-color);
+  border-radius: 2px;
+  overflow: hidden;
+  display: inline-block;
+  vertical-align: middle;
+  margin-left: 4px;
+}
+
+.process-usage-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent-aqua);
+  transition: width 0.4s ease;
+}
+
+.process-usage-fill.cpu-fill { background: var(--accent-teal); }
+.process-usage-fill.ram-fill { background: var(--accent-aqua); }
+.process-usage-fill.high { background: var(--warning); }
+.process-usage-fill.critical { background: var(--danger); }
