@@ -157,7 +157,7 @@ export const Settings: React.FC<SettingsProps> = ({
         <div className="about-box">
           <img src={purgioIcon} alt="Purgio Icon" className="about-logo" />
           <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '20px', fontWeight: 'bold' }}>Purgio</h3>
-          <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>Versión 1.0.0 (Build Estable)</p>
+          <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>Versión v2.0.0 (Optimización y Seguridad)</p>
           <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '12px' }}>
             Desarrollado para optimización segura y transparente de sistemas operativos.
           </p>
