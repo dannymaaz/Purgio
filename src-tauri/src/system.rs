@@ -1,5 +1,13 @@
 use serde::{Serialize, Deserialize};
-use sysinfo::{System, Disks, ProcessRefreshKind, RefreshKind, CpuRefreshKind, MemoryRefreshKind};
+use sysinfo::{System, Disks, ProcessRefreshKind, RefreshKind, CpuRefreshKind};
+use std::sync::{Mutex, OnceLock};
+
+fn get_system_instance() -> &'static Mutex<System> {
+    static SYSTEM: OnceLock<Mutex<System>> = OnceLock::new();
+    SYSTEM.get_or_init(|| {
+        Mutex::new(System::new())
+    })
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProcessItem {
@@ -110,11 +118,15 @@ fn get_process_metadata(name: &str) -> (String, Option<String>, bool) {
 
 /// Obtiene los procesos en segundo plano que son no-críticos y consumen memoria
 pub fn get_background_apps() -> Vec<ProcessItem> {
-    // Usar refresh_specifics para pedir SOLO procesos + memoria — más eficiente que new_all
-    let refresh_kind = RefreshKind::new()
-        .with_processes(ProcessRefreshKind::new().with_memory().with_cpu().with_exe(sysinfo::UpdateKind::Always));
-    let mut sys = System::new_with_specifics(refresh_kind);
-    sys.refresh_all();
+    let sys_mutex = get_system_instance();
+    let mut sys = sys_mutex.lock().unwrap();
+
+    // Refrescar procesos con memoria, cpu y exe
+    let refresh_kind = ProcessRefreshKind::new()
+        .with_memory()
+        .with_cpu()
+        .with_exe(sysinfo::UpdateKind::Always);
+    sys.refresh_processes_specifics(refresh_kind);
 
     let mut items = Vec::new();
 
@@ -177,10 +189,11 @@ pub fn kill_process(pid: u32) -> Result<(), String> {
         } else {
             #[cfg(target_os = "windows")]
             {
-                if let Ok(output) = std::process::Command::new("taskkill")
-                    .args(&["/F", "/PID", &pid.to_string()])
-                    .output()
-                {
+                use std::os::windows::process::CommandExt;
+                let mut cmd = std::process::Command::new("taskkill");
+                cmd.args(&["/F", "/PID", &pid.to_string()]);
+                cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+                if let Ok(output) = cmd.output() {
                     if output.status.success() {
                         return Ok(());
                     }
@@ -235,14 +248,14 @@ pub fn kill_process_group(name: &str) -> Result<usize, String> {
     Ok(killed)
 }
 
-/// Obtiene estadísticas globales del sistema — optimizado con refresh_specifics
+/// Obtiene estadísticas globales del sistema
 pub fn get_system_stats() -> SystemStats {
-    // Solo refrescar CPU y memoria, no todos los procesos
-    let refresh_kind = RefreshKind::new()
-        .with_cpu(CpuRefreshKind::new().with_cpu_usage())
-        .with_memory(MemoryRefreshKind::new().with_ram());
-    let mut sys = System::new_with_specifics(refresh_kind);
-    sys.refresh_all();
+    let sys_mutex = get_system_instance();
+    let mut sys = sys_mutex.lock().unwrap();
+
+    // Refrescar solo CPU y memoria
+    sys.refresh_memory();
+    sys.refresh_cpu_specifics(CpuRefreshKind::new().with_cpu_usage());
 
     let total_ram = sys.total_memory();
     let used_ram = sys.used_memory();

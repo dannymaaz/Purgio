@@ -36,7 +36,7 @@ export const Settings: React.FC<SettingsProps> = ({
   const [appVersion, setAppVersion] = useState<string>('...');
 
   useEffect(() => {
-    getVersion().then(setAppVersion).catch(() => setAppVersion('2.0.0'));
+    getVersion().then(setAppVersion).catch(() => setAppVersion('2.0.1'));
   }, []);
 
   return (

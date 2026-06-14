@@ -21,7 +21,7 @@ export const SideBar: React.FC<SideBarProps> = ({ currentTab, setCurrentTab, the
   const [appVersion, setAppVersion] = useState<string>('...');
 
   useEffect(() => {
-    getVersion().then(setAppVersion).catch(() => setAppVersion('2.0.0'));
+    getVersion().then(setAppVersion).catch(() => setAppVersion('2.0.1'));
   }, []);
 
   const menuItems = [

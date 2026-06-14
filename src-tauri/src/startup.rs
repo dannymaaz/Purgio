@@ -9,9 +9,9 @@ pub struct StartupItem {
     pub name: String,
     pub publisher: String,
     pub os: String,
-    pub estimated_impact: String,
-    pub status: String, // "Enabled" | "Disabled"
-    pub recommendation: String,
+    pub impact: String, // "High" | "Medium" | "Low" | "Unknown"
+    pub enabled: bool, // true / false
+    pub description: String,
     pub is_safe_to_disable: bool,
     pub location_key: String,
     pub command: Option<String>,
@@ -29,7 +29,7 @@ fn get_backup_startup_dir() -> Option<PathBuf> {
     None
 }
 
-/// Metadatos sobre las aplicaciones de inicio (impacto, recomendacin, etc)
+/// Metadatos sobre las aplicaciones de inicio (impacto, recomendación, etc)
 fn get_app_metadata(name: &str) -> (String, String, bool) {
     let name_lower = name.to_lowercase();
     
@@ -39,8 +39,8 @@ fn get_app_metadata(name: &str) -> (String, String, bool) {
         ("steam", "High", "Cliente de Steam.", true),
         ("epicgames", "Medium", "Epic Games Launcher.", true),
         ("adobe", "High", "Servicios de Adobe Creative Cloud.", true),
-        ("onedrive", "High", "Sincronizacion de Microsoft OneDrive.", true), // User wants to disable it, make it safe
-        ("dropbox", "High", "Sincronizacion de Dropbox.", true),
+        ("onedrive", "High", "Sincronización de Microsoft OneDrive.", true),
+        ("dropbox", "High", "Sincronización de Dropbox.", true),
         ("googledrive", "High", "Google Drive Sync.", true),
         ("skype", "Low", "Skype.", true),
         ("teams", "Medium", "Microsoft Teams.", true),
@@ -81,22 +81,20 @@ fn get_app_metadata(name: &str) -> (String, String, bool) {
             return (impact.to_string(), rec.to_string(), *safe);
         }
     }
-
-    ("Unknown".to_string(), "Desconocido. Si no lo usas, puede ser seguro desactivarlo.".to_string(), true)
+    ("Unknown".to_string(), "Aplicación no reconocida.".to_string(), true)
 }
 
 #[cfg(target_os = "windows")]
 fn read_registry_startup(items: &mut Vec<StartupItem>, hkey: winreg::HKEY, subkey: &str, is_disabled: bool, source_name: &str) {
-    use winreg::RegKey;
     use winreg::enums::*;
-    let root = RegKey::predef(hkey);
+    let root = winreg::RegKey::predef(hkey);
     if let Ok(run_key) = root.open_subkey_with_flags(subkey, KEY_READ) {
         for entry in run_key.enum_values().flatten() {
             let (name, val) = entry;
             let (impact, rec, safe) = get_app_metadata(&name);
             let cmd: String = val.to_string();
             
-            let status = if is_disabled { "Disabled".to_string() } else { "Enabled".to_string() };
+            let enabled = !is_disabled;
             
             // Format location_key securely based on source to enable restoring later
             let location_key = if is_disabled {
@@ -110,9 +108,9 @@ fn read_registry_startup(items: &mut Vec<StartupItem>, hkey: winreg::HKEY, subke
                 name: name.clone(),
                 publisher: format!("Registro ({})", source_name),
                 os: "Windows".to_string(),
-                estimated_impact: impact,
-                status,
-                recommendation: rec,
+                impact,
+                enabled,
+                description: rec,
                 is_safe_to_disable: safe,
                 location_key,
                 command: Some(cmd),
@@ -162,9 +160,9 @@ pub fn get_startup_items() -> Vec<StartupItem> {
                                 name: name.clone(),
                                 publisher: "Carpeta de Inicio".to_string(),
                                 os: "Windows".to_string(),
-                                estimated_impact: impact,
-                                status: "Enabled".to_string(),
-                                recommendation: rec,
+                                impact,
+                                enabled: true,
+                                description: rec,
                                 is_safe_to_disable: safe,
                                 location_key: path.to_string_lossy().to_string(),
                                 command: Some(path.to_string_lossy().to_string()),
@@ -191,9 +189,9 @@ pub fn get_startup_items() -> Vec<StartupItem> {
                                 name: name.clone(),
                                 publisher: "Carpeta de Inicio".to_string(),
                                 os: "Windows".to_string(),
-                                estimated_impact: impact,
-                                status: "Disabled".to_string(),
-                                recommendation: rec,
+                                impact,
+                                enabled: false,
+                                description: rec,
                                 is_safe_to_disable: safe,
                                 location_key: path.to_string_lossy().to_string(),
                                 command: Some(path.to_string_lossy().to_string()),
@@ -215,10 +213,6 @@ pub fn disable_startup_item(id: &str, location_key: &str) -> Result<(), String> 
         use winreg::RegKey;
 
         if location_key.contains("CurrentVersion\\Run") || location_key.contains("CurrentVersion\\RunOnce") {
-            let parts: Vec<&str> = location_key.splitn(2, '\\').collect();
-            let parent_key_path = parts.get(0).unwrap_or(&"");
-            let value_name = parts.last().unwrap_or(&""); // actually it's full path + \ + name, let's extract name. Wait, the location_key passed earlier is "Software\...\Run\Name".
-            
             // To properly split, the name is the last component
             let mut parts: Vec<&str> = location_key.split('\\').collect();
             let name = parts.pop().unwrap_or("");
@@ -304,4 +298,3 @@ pub fn enable_startup_item(_name: &str, location_key: &str, original_command: &s
 
     Err("No se pudo restaurar.".to_string())
 }
-

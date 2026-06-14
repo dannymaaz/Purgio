@@ -73,14 +73,21 @@ pub fn check_for_updates() -> UpdateInfo {
 
     // Ejecutar curl para consultar la API de GitHub
     let curl_cmd = if cfg!(target_os = "windows") { "curl.exe" } else { "curl" };
-    let output = Command::new(curl_cmd)
-        .args(&[
-            "-s",
-            "-H",
-            "User-Agent: Purgio",
-            "https://api.github.com/repos/dannymaaz/Purgio/releases/latest"
-        ])
-        .output();
+    let mut cmd = Command::new(curl_cmd);
+    cmd.args(&[
+        "-s",
+        "-H",
+        "User-Agent: Purgio",
+        "https://api.github.com/repos/dannymaaz/Purgio/releases/latest"
+    ]);
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+
+    let output = cmd.output();
 
     if let Ok(out) = output {
         if out.status.success() {

@@ -20,7 +20,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({ systemStats, hasUpdate }) =>
   const [appVersion, setAppVersion] = useState<string>('...');
 
   useEffect(() => {
-    getVersion().then(setAppVersion).catch(() => setAppVersion('2.0.0'));
+    getVersion().then(setAppVersion).catch(() => setAppVersion('2.0.1'));
   }, []);
 
   const minimizeWindow = () => appWindow.minimize();
@@ -46,21 +46,21 @@ export const TitleBar: React.FC<TitleBarProps> = ({ systemStats, hasUpdate }) =>
 
   return (
     <div data-tauri-drag-region className="titlebar">
-      <div className="titlebar-drag-region">
+      <div className="titlebar-drag-region" data-tauri-drag-region>
         <img
           src={purgioIcon}
           alt="Purgio"
           className="titlebar-logo"
           style={{ pointerEvents: 'none', width: '16px', height: '16px', marginRight: '8px' }}
         />
-        <span className="titlebar-title">Purgio</span>
-        <span style={{ fontSize: '10px', color: 'var(--text-muted)', marginLeft: '6px' }}>v{appVersion}</span>
+        <span className="titlebar-title" data-tauri-drag-region>Purgio</span>
+        <span style={{ fontSize: '10px', color: 'var(--text-muted)', marginLeft: '6px' }} data-tauri-drag-region>v{appVersion}</span>
 
         {/* Indicador de salud del sistema */}
         {systemStats && (
-          <div className="health-indicator" style={{ marginLeft: '12px' }}>
-            <span className={`health-dot ${health.class}`}></span>
-            {health.label}
+          <div className="health-indicator" style={{ marginLeft: '12px' }} data-tauri-drag-region>
+            <span className={`health-dot ${health.class}`} data-tauri-drag-region></span>
+            <span data-tauri-drag-region>{health.label}</span>
           </div>
         )}
       </div>
