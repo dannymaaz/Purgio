@@ -339,12 +339,16 @@ mod tests {
 
     #[test]
     fn rejects_unknown_preference_values() {
-        let mut preferences = AppPreferences::default();
-        preferences.theme = "neon".to_string();
+        let preferences = AppPreferences {
+            theme: "neon".to_string(),
+            ..AppPreferences::default()
+        };
         assert!(validate_preferences(&preferences).is_err());
 
-        let mut preferences = AppPreferences::default();
-        preferences.language = "xx".to_string();
+        let preferences = AppPreferences {
+            language: "xx".to_string(),
+            ..AppPreferences::default()
+        };
         assert!(validate_preferences(&preferences).is_err());
     }
 
