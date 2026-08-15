@@ -8,6 +8,7 @@ import { SideBar } from './components/SideBar';
 import { Splash } from './components/Splash';
 import { Dashboard } from './pages/Dashboard';
 import { Cleaner, CleanableItem } from './pages/Cleaner';
+import { CleanupPlan, CleanupRunResult } from './pages/CleanupPlan';
 import { Browsers } from './pages/Browsers';
 import { Startup, StartupItem } from './pages/Startup';
 import { Background, ProcessItem } from './pages/Background';
@@ -18,7 +19,7 @@ import { ToastContainer, useToast } from './components/Toast';
 // Utilidades
 import { formatBytes } from './utils/format';
 import { addHistoryEntry, clearLegacyHistory, readLegacyHistory } from './utils/history';
-import { I18nProvider, LanguagePreference, resolveLanguage, translate, translateBackendText } from './i18n';
+import { I18nProvider, LanguagePreference, resolveLanguage, translate } from './i18n';
 
 // Tipos correctamente tipados desde el backend
 interface SystemStats {
@@ -81,8 +82,9 @@ export const App: React.FC = () => {
   const [lastScanTimestamp, setLastScanTimestamp] = useState<number | null>(null);
 
   // Estados de Modales
-  const [showCleanModal, setShowCleanModal] = useState<boolean>(false);
-  const [itemsToClean, setItemsToClean] = useState<CleanableItem[]>([]);
+  const [cleanupPlan, setCleanupPlan] = useState<CleanableItem[]>([]);
+  const [cleanupResult, setCleanupResult] = useState<CleanupRunResult | null>(null);
+  const [isPreparingCleanPlan, setIsPreparingCleanPlan] = useState<boolean>(false);
   const [showDisableModal, setShowDisableModal] = useState<boolean>(false);
   const [itemToDisable, setItemToDisable] = useState<StartupItem | null>(null);
 
@@ -339,32 +341,47 @@ export const App: React.FC = () => {
     }, 1200);
   }, [runScan, addToast, t]);
 
-  // Limpieza de Elementos Seleccionados
+  // Cleanup Plan backend-authoritative. La UI entrega únicamente IDs; Rust vuelve a
+  // resolver catálogo, rutas, riesgos y tamaños inmediatamente antes de mostrar el plan.
   const executeClean = useCallback(async (selected: CleanableItem[]) => {
+    if (isCleaning || selected.length === 0) return;
+
     setIsCleaning(true);
     try {
-      const bytesFreed = await invoke<number>('clean_items', { items: selected });
+      const result = await invoke<CleanupRunResult>('clean_items', {
+        itemIds: selected.map(item => item.id),
+      });
+      setCleanupResult(result);
 
-      // La limpieza y el historial son resultados independientes: una falla al
-      // persistir el registro no puede reinterpretar una eliminación ya completada.
-      try {
-        await addHistoryEntry(bytesFreed, selected.length);
-      } catch (historyError) {
-        console.error('La limpieza terminó pero no se pudo guardar el historial:', historyError);
+      // Historial y limpieza son resultados independientes. Solo se registra una
+      // ejecución real; una falla de persistencia nunca reinterpreta el outcome.
+      if (result.items_attempted > 0) {
+        try {
+          await addHistoryEntry(result.bytes_freed, result.items_attempted);
+        } catch (historyError) {
+          console.error('La limpieza terminó pero no se pudo guardar el historial:', historyError);
+          addToast(
+            t('La limpieza se completó, pero no se pudo guardar la entrada en el historial.'),
+            'warning',
+            6000
+          );
+        }
+      }
+
+      if (result.items_partial > 0 || result.items_failed > 0) {
         addToast(
-          t('La limpieza se completó, pero no se pudo guardar la entrada en el historial.'),
+          `${t('Limpieza terminada con incidencias. Se liberaron')} ${formatBytes(result.bytes_freed, activeLanguage)} ${t('de espacio.')}`,
           'warning',
-          6000
+          7000
+        );
+      } else {
+        addToast(
+          `${t('✓ Limpieza completada. Se liberaron')} ${formatBytes(result.bytes_freed, activeLanguage)} ${t('de espacio.')}`,
+          'success',
+          5000
         );
       }
 
-      addToast(
-        `${t('✓ Limpieza completada. Se liberaron')} ${formatBytes(bytesFreed, activeLanguage)} ${t('de espacio.')}`,
-        'success',
-        5000
-      );
-
-      // Refrescar escaneo inmediatamente
       await runScan();
       fetchSystemStats();
     } catch (e) {
@@ -373,16 +390,31 @@ export const App: React.FC = () => {
     } finally {
       setIsCleaning(false);
     }
-  }, [runScan, fetchSystemStats, addToast, activeLanguage, t]);
+  }, [isCleaning, runScan, fetchSystemStats, addToast, activeLanguage, t]);
 
-  const handleCleanTrigger = useCallback((selected: CleanableItem[]) => {
-    if (confirmDelete) {
-      setItemsToClean(selected);
-      setShowCleanModal(true);
-    } else {
-      executeClean(selected);
+  const handleCleanTrigger = useCallback(async (selected: CleanableItem[]) => {
+    if (isCleaning || isPreparingCleanPlan || selected.length === 0) return;
+
+    setIsPreparingCleanPlan(true);
+    try {
+      const preview = await invoke<CleanableItem[]>('preview_clean_items', {
+        itemIds: selected.map(item => item.id),
+      });
+
+      if (preview.length === 0) {
+        addToast(t('Purgio no encontró targets autorizados para los elementos seleccionados.'), 'warning', 5000);
+        return;
+      }
+
+      setCleanupResult(null);
+      setCleanupPlan(preview);
+    } catch (error) {
+      console.error('No se pudo preparar el Cleanup Plan:', error);
+      addToast(`${t('No se pudo preparar el plan de limpieza.')} ${String(error)}`, 'error', 6000);
+    } finally {
+      setIsPreparingCleanPlan(false);
     }
-  }, [confirmDelete, executeClean]);
+  }, [isCleaning, isPreparingCleanPlan, addToast, t]);
 
   // Gestión de Arranque
   const handleDisableTrigger = useCallback((item: StartupItem) => {
@@ -489,7 +521,7 @@ export const App: React.FC = () => {
             items={cleanableItems}
             setItems={setCleanableItems}
             handleClean={handleCleanTrigger}
-            isCleaning={isCleaning}
+            isCleaning={isCleaning || isPreparingCleanPlan}
             scanStatus={scanStatus}
             handleScan={handleScan}
           />
@@ -500,7 +532,7 @@ export const App: React.FC = () => {
             items={cleanableItems}
             setItems={setCleanableItems}
             handleClean={handleCleanTrigger}
-            isCleaning={isCleaning}
+            isCleaning={isCleaning || isPreparingCleanPlan}
             scanStatus={scanStatus}
             handleScan={handleScan}
           />
@@ -594,66 +626,19 @@ export const App: React.FC = () => {
       {/* Toast notifications */}
       <ToastContainer toasts={toasts} removeToast={removeToast} />
 
-      {/* Modal de confirmación para borrado de archivos (mejorado con lista) */}
-      {showCleanModal && (
-        <div className="modal-overlay" onClick={() => setShowCleanModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header danger">
-              <WarningIcon size={20} className="danger" />
-              {t('Confirmar Eliminación')}
-            </div>
-            <div className="modal-body">
-              <p style={{ marginBottom: '12px' }}>
-                {t('Se eliminarán {{count}} elementos liberando {{size}} de espacio. Esta acción es irreversible.', {
-                  count: itemsToClean.length,
-                  size: formatBytes(itemsToClean.reduce((sum, item) => sum + item.size, 0), activeLanguage),
-                })}
-              </p>
-              {/* Lista de los primeros 5 elementos */}
-              <div style={{
-                maxHeight: '140px',
-                overflowY: 'auto',
-                border: '1px solid var(--border-color)',
-                borderRadius: '6px',
-                padding: '8px 12px',
-                fontSize: '12px',
-                color: 'var(--text-secondary)',
-                background: 'var(--bg-secondary)'
-              }}>
-                {itemsToClean.slice(0, 6).map((item, i) => (
-                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', borderBottom: '1px solid var(--border-color)' }}>
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: '8px' }}>{translateBackendText(activeLanguage, item.name)}</span>
-                    <span style={{ color: 'var(--text-muted)', flexShrink: 0 }}>{formatBytes(item.size, activeLanguage)}</span>
-                  </div>
-                ))}
-                {itemsToClean.length > 6 && (
-                  <div style={{ color: 'var(--text-muted)', padding: '3px 0', fontStyle: 'italic' }}>
-                    {t('…y {{count}} más', { count: itemsToClean.length - 6 })}
-                  </div>
-                )}
-              </div>
-            </div>
-            <div className="modal-actions">
-              <button
-                className="btn btn-secondary"
-                onClick={() => setShowCleanModal(false)}
-                disabled={isCleaning}
-              >
-                {t('Cancelar')}
-              </button>
-              <button
-                className="btn btn-danger"
-                onClick={() => {
-                  executeClean(itemsToClean);
-                  setShowCleanModal(false);
-                }}
-                disabled={isCleaning}
-              >
-                {isCleaning ? t('Limpiando...') : t('Limpiar definitivamente')}
-              </button>
-            </div>
-          </div>
-        </div>
+      {cleanupPlan.length > 0 && (
+        <CleanupPlan
+          plan={cleanupPlan}
+          result={cleanupResult}
+          isCleaning={isCleaning}
+          requireRiskConfirmation={confirmDelete}
+          onConfirm={() => executeClean(cleanupPlan)}
+          onClose={() => {
+            if (isCleaning) return;
+            setCleanupPlan([]);
+            setCleanupResult(null);
+          }}
+        />
       )}
 
       {/* Modal de confirmación para desactivación de arranque */}
