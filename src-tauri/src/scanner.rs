@@ -52,41 +52,52 @@ impl CleanableItem {
 
 /// Helper para calcular el tamaño de un directorio de forma segura e incremental (evitando bucles infinitos y recursión profunda)
 pub fn get_dir_size<P: AsRef<Path>>(path: P) -> u64 {
-    let mut total_size = 0;
-    let max_depth = 5; // Limitar profundidad para evitar bloqueos
+    const MAX_SCAN_DEPTH: usize = 5;
 
-    fn dir_size_recursive(path: &Path, current_depth: usize, max_depth: usize) -> u64 {
-        if current_depth > max_depth {
+    fn entry_size(path: &Path, current_depth: usize) -> u64 {
+        if current_depth > MAX_SCAN_DEPTH {
             return 0;
         }
 
-        let mut size = 0;
-        if let Ok(entries) = fs::read_dir(path) {
-            for entry in entries.flatten() {
-                if let Ok(metadata) = entry.metadata() {
-                    if metadata.is_file() {
-                        size += metadata.len();
-                    } else if metadata.is_dir() {
-                        // Evitar seguir enlaces simbólicos para no entrar en bucles
-                        if !metadata.file_type().is_symlink() {
-                            size += dir_size_recursive(&entry.path(), current_depth + 1, max_depth);
-                        }
-                    }
-                }
-            }
+        let path_str = path.to_string_lossy();
+        if safety::is_path_critical(&path_str) {
+            return 0;
         }
-        size
+
+        let metadata = match fs::symlink_metadata(path) {
+            Ok(metadata) => metadata,
+            Err(_) => return 0,
+        };
+
+        if safety::metadata_is_reparse_point(&metadata) || metadata.file_type().is_symlink() {
+            return 0;
+        }
+
+        if metadata.is_file() {
+            return metadata.len();
+        }
+
+        if !metadata.is_dir() {
+            return 0;
+        }
+
+        fs::read_dir(path)
+            .map(|entries| {
+                entries
+                    .flatten()
+                    .map(|entry| entry_size(&entry.path(), current_depth + 1))
+                    .sum()
+            })
+            .unwrap_or(0)
     }
 
-    if path.as_ref().is_dir() {
-        total_size = dir_size_recursive(path.as_ref(), 0, max_depth);
-    } else if path.as_ref().is_file() {
-        if let Ok(metadata) = fs::metadata(path) {
-            total_size = metadata.len();
-        }
-    }
+    entry_size(path.as_ref(), 0)
+}
 
-    total_size
+#[cfg(target_os = "windows")]
+fn is_windows_thumbnail_cache_file(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    lower.starts_with("thumbcache_") && lower.ends_with(".db")
 }
 
 /// Obtiene los directorios de usuario de navegadores según la plataforma
@@ -214,41 +225,67 @@ pub fn scan_system_files() -> Vec<CleanableItem> {
                 "Archivos Temporales del Sistema",
                 size,
                 vec![system_temp.to_string()],
-                RiskLevel::Safe,
-                "Archivos temporales generados por el sistema operativo y servicios en segundo plano.",
-                "Se eliminarán archivos innecesarios de instalación y logs del sistema viejo.",
-                "Seguro de eliminar.",
+                RiskLevel::Review,
+                "Archivos temporales generados por Windows y servicios en segundo plano dentro de C:\\Windows\\Temp.",
+                "Purgio intentará eliminar únicamente entradas que superen las protecciones de rutas críticas, symlinks y reparse points. Archivos en uso pueden conservarse.",
+                "Revisar antes de eliminar; no se selecciona automáticamente.",
                 "temp",
             ));
         }
 
-        // Caché de miniaturas
+        // Caché de miniaturas: autorizar exactamente los mismos archivos que se contabilizan.
         if let Ok(local_appdata) = env::var("LOCALAPPDATA") {
             let explorer_cache = PathBuf::from(&local_appdata).join("Microsoft\\Windows\\Explorer");
             if explorer_cache.exists() {
-                // Filtrar solo archivos thumbcache_*.db
                 let mut size = 0;
+                let mut thumb_paths = Vec::new();
+
                 if let Ok(entries) = fs::read_dir(&explorer_cache) {
                     for entry in entries.flatten() {
+                        let entry_path = entry.path();
                         let name = entry.file_name().to_string_lossy().to_string();
-                        if name.starts_with("thumbcache_") && name.ends_with(".db") {
-                            if let Ok(meta) = entry.metadata() {
-                                size += meta.len();
-                            }
+                        if !is_windows_thumbnail_cache_file(&name) {
+                            continue;
                         }
+
+                        let metadata = match fs::symlink_metadata(&entry_path) {
+                            Ok(metadata) => metadata,
+                            Err(_) => continue,
+                        };
+
+                        if safety::metadata_is_reparse_point(&metadata)
+                            || metadata.file_type().is_symlink()
+                            || !metadata.is_file()
+                        {
+                            continue;
+                        }
+
+                        let entry_path_string = entry_path.to_string_lossy().to_string();
+                        if safety::is_path_critical(&entry_path_string) {
+                            continue;
+                        }
+
+                        size += metadata.len();
+                        thumb_paths.push(entry_path_string);
                     }
                 }
-                items.push(CleanableItem::new(
-                    "win_thumb_cache",
-                    "Caché de Miniaturas",
-                    size,
-                    vec![explorer_cache.to_str().unwrap_or("").to_string()],
-                    RiskLevel::Safe,
-                    "Vistas previas de imágenes y videos creadas por el explorador de archivos para mostrarlas rápido.",
-                    "El sistema tardará unos segundos en regenerar las miniaturas de tus carpetas cuando vuelvas a entrar a ellas.",
-                    "Seguro de eliminar.",
-                    "cache",
-                ));
+
+                thumb_paths.sort();
+                thumb_paths.dedup();
+
+                if !thumb_paths.is_empty() {
+                    items.push(CleanableItem::new(
+                        "win_thumb_cache",
+                        "Caché de Miniaturas",
+                        size,
+                        thumb_paths,
+                        RiskLevel::Safe,
+                        "Bases de datos thumbcache_*.db que Windows Explorer usa para acelerar vistas previas.",
+                        "Solo se eliminarán las bases de miniaturas mostradas en el Cleanup Plan. Windows puede regenerarlas cuando vuelvas a explorar carpetas.",
+                        "Seguro de eliminar; las miniaturas se reconstruyen bajo demanda.",
+                        "cache",
+                    ));
+                }
             }
         }
 
@@ -271,40 +308,26 @@ pub fn scan_system_files() -> Vec<CleanableItem> {
             }
         }
 
-        // Windows Update Cache
-        let win_update_cache = "C:\\Windows\\SoftwareDistribution\\Download";
-        let win_update_path = PathBuf::from(win_update_cache);
-        if win_update_path.exists() && !safety::is_path_critical(win_update_cache) {
-            let size = get_dir_size(&win_update_path);
-            items.push(CleanableItem::new(
-                "win_update_cache",
-                "Caché de Windows Update",
-                size,
-                vec![win_update_cache.to_string()],
-                RiskLevel::Safe,
-                "Archivos temporales descargados por Windows Update. Se pueden eliminar tras instalar actualizaciones.",
-                "Se liberará espacio. Si hay actualizaciones pendientes de instalar, se volverán a descargar.",
-                "Seguro de eliminar.",
-                "temp",
-            ));
-        }
-
-        // Logs del sistema de Windows
-        let win_logs = "C:\\Windows\\Logs";
-        let win_logs_path = PathBuf::from(win_logs);
-        if win_logs_path.exists() && !safety::is_path_critical(win_logs) {
-            let size = get_dir_size(&win_logs_path);
-            items.push(CleanableItem::new(
-                "win_logs",
-                "Archivos de Log del Sistema",
-                size,
-                vec![win_logs.to_string()],
-                RiskLevel::Safe,
-                "Registros de actividad detallada generados por el sistema operativo Windows y sus servicios.",
-                "Se borrarán logs de diagnóstico de texto plano antiguos. No afecta al funcionamiento de los programas.",
-                "Seguro de eliminar.",
-                "cache",
-            ));
+        // DirectX Shader Cache. Microsoft documenta las cachés D3D12 por defecto como
+        // almacenamiento temporal que puede ser limpiado por Disk Cleanup.
+        if let Ok(local_appdata) = env::var("LOCALAPPDATA") {
+            let d3d_cache = PathBuf::from(local_appdata).join("D3DSCache");
+            if d3d_cache.exists() {
+                let size = get_dir_size(&d3d_cache);
+                if size > 0 {
+                    items.push(CleanableItem::new(
+                        "win_directx_shader_cache",
+                        "Caché de Shaders de DirectX",
+                        size,
+                        vec![d3d_cache.to_string_lossy().to_string()],
+                        RiskLevel::Safe,
+                        "Shaders compilados almacenados temporalmente por DirectX para reducir trabajo repetido de la GPU.",
+                        "Se liberará el almacenamiento temporal detectado. Juegos y aplicaciones pueden recompilar shaders cuando vuelvan a ejecutarse.",
+                        "Seguro de eliminar; Windows y las aplicaciones recrean la caché cuando es necesaria.",
+                        "cache",
+                    ));
+                }
+            }
         }
     }
 
@@ -853,4 +876,19 @@ pub fn scan_browser_files() -> Vec<CleanableItem> {
     }
 
     items
+}
+
+
+#[cfg(all(test, target_os = "windows"))]
+mod windows_tests {
+    use super::*;
+
+    #[test]
+    fn thumbnail_cache_filename_filter_is_exact() {
+        assert!(is_windows_thumbnail_cache_file("thumbcache_96.db"));
+        assert!(is_windows_thumbnail_cache_file("THUMBCACHE_1024.DB"));
+        assert!(!is_windows_thumbnail_cache_file("iconcache_96.db"));
+        assert!(!is_windows_thumbnail_cache_file("thumbcache_96.db.bak"));
+        assert!(!is_windows_thumbnail_cache_file("thumbcache.db"));
+    }
 }
