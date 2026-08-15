@@ -1,5 +1,7 @@
 import React from 'react';
 import { ShieldIcon, InfoIcon } from '../components/Icons';
+import { useI18n } from '../i18n';
+import { formatBytes } from '../utils/format';
 
 interface DashboardProps {
   stats: {
@@ -30,13 +32,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   startupCount,
   bgCount
 }) => {
-  const formatBytes = (bytes: number): string => {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  };
+  const { t, language } = useI18n();
 
   const getRamPercent = (): number => {
     if (!stats || stats.total_ram === 0) return 0;
@@ -49,10 +45,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
     return Math.round((used / stats.total_disk) * 100);
   };
 
+  const number = new Intl.NumberFormat(language === 'es' ? 'es-GT' : 'en-US');
+
   return (
     <div>
       <div className="hero-scanner">
-        <button 
+        <button
           className={`scanner-circle-btn ${scanStatus === 'scanning' ? 'scanning' : ''}`}
           onClick={handleScan}
           disabled={scanStatus === 'scanning'}
@@ -61,59 +59,57 @@ export const Dashboard: React.FC<DashboardProps> = ({
             <circle cx="11" cy="11" r="8" />
             <line x1="21" y1="21" x2="16.65" y2="16.65" />
           </svg>
-          <span>
-            {scanStatus === 'scanning' ? 'Escaneando' : 'Escanear'}
-          </span>
+          <span>{t(scanStatus === 'scanning' ? 'Escaneando' : 'Escanear')}</span>
         </button>
-        
+
         <div className="security-badge-container">
           <ShieldIcon className="aqua" size={14} />
-          <span>Purgio nunca elimina datos personales o contraseñas sin tu confirmación.</span>
+          <span>{t('Purgio nunca elimina datos personales o contraseñas sin tu confirmación.')}</span>
         </div>
       </div>
 
       <div className="dashboard-grid">
-        {/* Tarjeta del Estado del Sistema */}
         <div className="card">
-          <div className="card-title">Sistema Operativo</div>
+          <div className="card-title">{t('Sistema Operativo')}</div>
           <div className="card-value teal" style={{ fontSize: '24px', padding: '6px 0' }}>
-            {stats?.os_name || 'Detectando...'}
+            {stats?.os_name || t('Detectando...')}
           </div>
-          <div className="card-desc">Monitoreo de recursos nativos en tiempo real.</div>
+          <div className="card-desc">{t('Monitoreo de recursos nativos en tiempo real.')}</div>
         </div>
 
-        {/* Tarjeta RAM */}
         <div className="card">
-          <div className="card-title">Uso de Memoria RAM</div>
+          <div className="card-title">{t('Uso de Memoria RAM')}</div>
           <div className="card-value">
-            {stats ? `${getRamPercent()}%` : '0%'}
+            {stats ? `${number.format(getRamPercent())}%` : '0%'}
           </div>
           <div className="card-desc">
-            {stats ? `${formatBytes(stats.used_ram)} usados de ${formatBytes(stats.total_ram)}` : 'Cargando...'}
+            {stats
+              ? `${formatBytes(stats.used_ram, language)} ${t('usados de')} ${formatBytes(stats.total_ram, language)}`
+              : t('Cargando...')}
           </div>
         </div>
 
-        {/* Tarjeta Almacenamiento */}
         <div className="card">
-          <div className="card-title">Espacio en Disco Principal</div>
+          <div className="card-title">{t('Espacio en Disco Principal')}</div>
           <div className="card-value">
-            {stats ? `${formatBytes(stats.free_disk)}` : '0 GB'}
+            {stats ? formatBytes(stats.free_disk, language) : '0 GB'}
           </div>
           <div className="card-desc">
-            {stats ? `Libres de ${formatBytes(stats.total_disk)} totales (${getDiskUsedPercent()}% en uso)` : 'Cargando...'}
+            {stats
+              ? `${t('Libres de')} ${formatBytes(stats.total_disk, language)} ${t('totales')} (${number.format(getDiskUsedPercent())}% ${t('en uso')})`
+              : t('Cargando...')}
           </div>
         </div>
 
-        {/* Tarjeta Espacio Potencial */}
         <div className="card">
-          <div className="card-title">Espacio Recuperable</div>
+          <div className="card-title">{t('Espacio Recuperable')}</div>
           <div className="card-value aqua">
-            {scanStatus === 'done' ? formatBytes(potentialSpace) : '---'}
+            {scanStatus === 'done' ? formatBytes(potentialSpace, language) : '---'}
           </div>
           <div className="card-desc">
-            {scanStatus === 'done' 
-              ? `${safeCount} elementos seguros listos para limpiar.` 
-              : 'Haz clic en Escanear para analizar archivos temporales.'}
+            {scanStatus === 'done'
+              ? `${number.format(safeCount)} ${t('elementos seguros listos para limpiar.')}`
+              : t('Haz clic en Escanear para analizar archivos temporales.')}
           </div>
         </div>
       </div>
@@ -122,24 +118,24 @@ export const Dashboard: React.FC<DashboardProps> = ({
         <div className="card" style={{ marginTop: '24px', borderLeft: '3px solid var(--accent-aqua)' }}>
           <div className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <InfoIcon size={16} className="aqua" />
-            Resumen del Análisis
+            {t('Resumen del Análisis')}
           </div>
           <div className="dashboard-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginTop: '14px' }}>
             <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: '20px', fontWeight: 'bold' }}>{safeCount}</div>
-              <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Archivos Seguros</div>
+              <div style={{ fontSize: '20px', fontWeight: 'bold' }}>{number.format(safeCount)}</div>
+              <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{t('Archivos Seguros')}</div>
             </div>
             <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: '20px', fontWeight: 'bold' }}>{reviewCount}</div>
-              <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Requieren Revisión</div>
+              <div style={{ fontSize: '20px', fontWeight: 'bold' }}>{number.format(reviewCount)}</div>
+              <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{t('Requieren Revisión')}</div>
             </div>
             <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: '20px', fontWeight: 'bold' }}>{startupCount}</div>
-              <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Apps de Arranque</div>
+              <div style={{ fontSize: '20px', fontWeight: 'bold' }}>{number.format(startupCount)}</div>
+              <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{t('Apps de Arranque')}</div>
             </div>
             <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: '20px', fontWeight: 'bold' }}>{bgCount}</div>
-              <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Procesos de Fondo</div>
+              <div style={{ fontSize: '20px', fontWeight: 'bold' }}>{number.format(bgCount)}</div>
+              <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{t('Procesos de Fondo')}</div>
             </div>
           </div>
         </div>
