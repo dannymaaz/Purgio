@@ -18,12 +18,12 @@ jobs:
           fetch-depth: 0
       - name: Apply UI integration
         run: python3 scripts/pr08_apply.py
-      - name: Remove temporary helpers
-        run: git rm .github/workflows/pr08-apply.yml scripts/pr08_apply.py
-      - name: Commit integration
+      - name: Keep workflow changes out of runner push
+        run: git checkout -- .github/workflows/ci.yml .github/workflows/pr08-apply.yml scripts/pr08_apply.py
+      - name: Commit product integration only
         run: |
           git config user.name "Danny Maaz"
           git config user.email "61290346+dannymaaz@users.noreply.github.com"
-          git add -A
+          git add src/App.tsx src/pages/Settings.tsx src/i18n.tsx src/styles/index.css
           git commit -m "Integrate backend-verified cleanup plan UI"
           git push origin HEAD:pr-08-cleanup-plan
