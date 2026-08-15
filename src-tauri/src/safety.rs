@@ -110,7 +110,7 @@ fn has_windows_reparse_attribute(file_attributes: u32) -> bool {
 pub fn metadata_is_reparse_point(metadata: &fs::Metadata) -> bool {
     #[cfg(target_os = "windows")]
     {
-        return has_windows_reparse_attribute(metadata.file_attributes());
+        has_windows_reparse_attribute(metadata.file_attributes())
     }
 
     #[cfg(not(target_os = "windows"))]
