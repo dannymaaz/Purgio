@@ -1,0 +1,27 @@
+name: "PR-09 Windows cleanup hardening"
+
+on:
+  push:
+    branches:
+      - pr-09-windows-cleanup-safe
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Apply scanner hardening
+        run: python3 scripts/pr09_windows_hardening.py
+      - name: Commit product changes
+        run: |
+          git config user.name "Danny Maaz"
+          git config user.email "61290346+dannymaaz@users.noreply.github.com"
+          git add src-tauri/src/scanner.rs
+          git commit -m "Harden Windows cleanup targets and add DirectX cache"
+          git push origin HEAD:pr-09-windows-cleanup-safe
