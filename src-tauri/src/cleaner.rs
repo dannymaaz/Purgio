@@ -20,7 +20,10 @@ pub fn clean_path_safely(path_str: &str, _is_sensitive: bool) -> Result<u64, Str
             .map_err(|e| format!("No se pudo leer el archivo {}: {}", path_str, e))?;
 
         if metadata.file_type().is_symlink() {
-            return Err(format!("Acción bloqueada: el archivo es un enlace simbólico: {}", path_str));
+            return Err(format!(
+                "Acción bloqueada: el archivo es un enlace simbólico: {}",
+                path_str
+            ));
         }
 
         let size = metadata.len();
