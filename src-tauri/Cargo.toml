@@ -27,4 +27,4 @@ sysinfo = "0.30"
 winreg = "0.52"
 
 [target.'cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))'.dependencies]
-tauri-plugin-updater = "2"
+tauri-plugin-updater = "=2.10.1"
