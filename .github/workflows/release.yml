@@ -5,10 +5,15 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   publish-tauri:
-    permissions:
-      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -21,36 +26,88 @@ jobs:
             args: ""
 
     runs-on: ${{ matrix.platform }}
+    timeout-minutes: 45
+
     steps:
-      - name: "Clonar Repositorio"
-        uses: actions/checkout@v4
+      - name: "Clonar repositorio"
+        uses: actions/checkout@v7
 
       - name: "Instalar Node.js"
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 24
           cache: "npm"
 
       - name: "Instalar Rust stable"
         uses: dtolnay/rust-toolchain@stable
 
-      - name: "Instalar dependencias de Linux (Ubuntu)"
+      - name: "Instalar dependencias de Linux"
         if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
 
       - name: "Instalar dependencias del proyecto"
-        run: npm install
+        run: npm ci
 
-      - name: "Compilar y Publicar en GitHub Releases"
+      - name: "Validar configuración de firma del updater"
+        shell: bash
+        env:
+          TAURI_UPDATER_PUBLIC_KEY: ${{ vars.TAURI_UPDATER_PUBLIC_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if [ -z "$TAURI_UPDATER_PUBLIC_KEY" ]; then
+            echo "Falta la variable de repositorio TAURI_UPDATER_PUBLIC_KEY."
+            exit 1
+          fi
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "Falta el secret TAURI_SIGNING_PRIVATE_KEY."
+            exit 1
+          fi
+
+      - name: "Inyectar clave pública del updater"
+        shell: bash
+        env:
+          TAURI_UPDATER_PUBLIC_KEY: ${{ vars.TAURI_UPDATER_PUBLIC_KEY }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+
+          path = "src-tauri/tauri.conf.json"
+          with open(path, "r", encoding="utf-8") as file:
+              config = json.load(file)
+
+          config.setdefault("plugins", {}).setdefault("updater", {})["pubkey"] = os.environ["TAURI_UPDATER_PUBLIC_KEY"]
+
+          with open(path, "w", encoding="utf-8") as file:
+              json.dump(config, file, indent=2, ensure_ascii=False)
+              file.write("\n")
+          PY
+
+      - name: "Compilar artefactos firmados"
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: "Purgio v${{ github.ref_name }}"
+          releaseName: "Purgio ${{ github.ref_name }}"
           releaseBody: "Vea el CHANGELOG.md para obtener detalles de los cambios en esta versión."
           releaseDraft: true
           prerelease: false
-          args: ${{ matrix.args }}
+          args: "${{ matrix.args }} --config src-tauri/tauri.release.conf.json"
+
+  publish-release:
+    name: "Publicar release completa"
+    needs:
+      - publish-tauri
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+
+    steps:
+      - name: "Publicar draft después de validar todas las plataformas"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "$GITHUB_REF_NAME" --draft=false --repo "$GITHUB_REPOSITORY"

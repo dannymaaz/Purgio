@@ -55,5 +55,16 @@
         "installMode": "currentUser"
       }
     }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "PURGIO_UPDATER_PUBLIC_KEY_NOT_CONFIGURED",
+      "endpoints": [
+        "https://github.com/dannymaaz/Purgio/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

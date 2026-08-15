@@ -144,13 +144,19 @@ fn kill_background_process_group(name: String) -> Result<usize, String> {
 }
 
 #[tauri::command]
-fn check_for_updates() -> updater::UpdateInfo {
-    updater::check_for_updates()
+async fn check_for_updates(app: tauri::AppHandle) -> Result<updater::UpdateInfo, String> {
+    updater::check_for_updates(&app).await
+}
+
+#[tauri::command]
+async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
+    updater::install_update(&app).await
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             get_system_stats,
             scan_system_files,
@@ -163,7 +169,8 @@ pub fn run() {
             get_background_apps,
             kill_background_process,
             kill_background_process_group,
-            check_for_updates
+            check_for_updates,
+            install_update
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
