@@ -16,7 +16,7 @@ import { ToastContainer, useToast } from './components/Toast';
 
 // Utilidades
 import { formatBytes } from './utils/format';
-import { addHistoryEntry } from './utils/history';
+import { addHistoryEntry, clearLegacyHistory, readLegacyHistory } from './utils/history';
 
 // Tipos correctamente tipados desde el backend
 interface SystemStats {
@@ -39,19 +39,31 @@ interface UpdateInfo {
   changelog: string;
 }
 
+interface AppPreferences {
+  theme: 'dark' | 'light' | 'system';
+  language: 'es' | 'en';
+  confirm_delete: boolean;
+  confirm_disable: boolean;
+  show_sensitive: boolean;
+}
+
+interface PersistedState {
+  schema_version: number;
+  legacy_migration_completed: boolean;
+  preferences: AppPreferences;
+}
+
 export const App: React.FC = () => {
   // Pestaña activa
   const [currentTab, setCurrentTab] = useState<string>('dashboard');
 
-  // Ajustes y Configuración
-  const [theme, setTheme] = useState<'dark' | 'light' | 'system'>(() => {
-    const saved = localStorage.getItem('purgio-theme');
-    return (saved as any) || 'system';
-  });
+  // Ajustes y Configuración — defaults seguros hasta hidratar app_config_dir.
+  const [theme, setTheme] = useState<'dark' | 'light' | 'system'>('system');
   const [lang, setLang] = useState<'es' | 'en'>('es');
   const [confirmDelete, setConfirmDelete] = useState<boolean>(true);
   const [confirmDisable, setConfirmDisable] = useState<boolean>(true);
   const [showSensitive, setShowSensitive] = useState<boolean>(false);
+  const [settingsHydrated, setSettingsHydrated] = useState<boolean>(false);
 
   // Estados de datos globales (tipado correcto, no 'any')
   const [systemStats, setSystemStats] = useState<SystemStats | null>(null);
@@ -80,7 +92,77 @@ export const App: React.FC = () => {
   // Toast notifications
   const { toasts, addToast, removeToast } = useToast();
 
-  // Tema de Color Dinámico — se guarda siempre, incluso al elegir 'system'
+
+  // Cargar configuración persistente desde app_config_dir. localStorage se usa
+  // exclusivamente como fuente legacy para una única migración.
+  useEffect(() => {
+    let cancelled = false;
+
+    const hydrateSettings = async () => {
+      try {
+        let state = await invoke<PersistedState>('load_app_state');
+
+        if (!state.legacy_migration_completed) {
+          const legacyTheme = localStorage.getItem('purgio-theme');
+          const legacyHistory = readLegacyHistory();
+          state = await invoke<PersistedState>('migrate_legacy_state', {
+            legacy: {
+              theme: legacyTheme,
+              history: legacyHistory,
+            },
+          });
+        }
+
+        // Una vez que Rust confirma el estado, los datos del WebView dejan de ser
+        // necesarios y no pueden volver a sobrescribir app_config_dir.
+        localStorage.removeItem('purgio-theme');
+        clearLegacyHistory();
+
+        if (cancelled) return;
+        setTheme(state.preferences.theme);
+        setLang(state.preferences.language);
+        setConfirmDelete(state.preferences.confirm_delete);
+        setConfirmDisable(state.preferences.confirm_disable);
+        setShowSensitive(state.preferences.show_sensitive);
+        setSettingsHydrated(true);
+      } catch (error) {
+        console.error('Error al cargar la configuración persistente:', error);
+        if (!cancelled) {
+          addToast('No se pudo cargar la configuración guardada; se mantienen valores seguros sin sobrescribir el archivo.', 'error', 7000);
+        }
+      }
+    };
+
+    hydrateSettings();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Persistir cambios solo después de una hidratación correcta, evitando que los
+  // defaults del primer render sobrescriban preferencias existentes.
+  useEffect(() => {
+    if (!settingsHydrated) return;
+
+    const timer = window.setTimeout(() => {
+      invoke('save_preferences', {
+        preferences: {
+          theme,
+          language: lang,
+          confirm_delete: confirmDelete,
+          confirm_disable: confirmDisable,
+          show_sensitive: showSensitive,
+        },
+      }).catch((error) => {
+        console.error('Error al guardar la configuración:', error);
+        addToast('No se pudieron guardar los cambios de configuración.', 'error', 5000);
+      });
+    }, 150);
+
+    return () => window.clearTimeout(timer);
+  }, [settingsHydrated, theme, lang, confirmDelete, confirmDisable, showSensitive]);
+
+  // Tema de Color Dinámico — la persistencia se gestiona en app_config_dir.
   useEffect(() => {
     const root = document.documentElement;
     root.classList.remove('theme-dark', 'theme-light');
@@ -88,9 +170,6 @@ export const App: React.FC = () => {
     const applyTheme = (t: 'dark' | 'light') => {
       root.classList.add(t === 'dark' ? 'theme-dark' : 'theme-light');
     };
-
-    // Siempre persistir la elección del usuario
-    localStorage.setItem('purgio-theme', theme);
 
     if (theme === 'system') {
       const systemDark = window.matchMedia('(prefers-color-scheme: dark)');
@@ -235,8 +314,18 @@ export const App: React.FC = () => {
     try {
       const bytesFreed = await invoke<number>('clean_items', { items: selected });
 
-      // Guardar en historial
-      addHistoryEntry(bytesFreed, selected.length);
+      // La limpieza y el historial son resultados independientes: una falla al
+      // persistir el registro no puede reinterpretar una eliminación ya completada.
+      try {
+        await addHistoryEntry(bytesFreed, selected.length);
+      } catch (historyError) {
+        console.error('La limpieza terminó pero no se pudo guardar el historial:', historyError);
+        addToast(
+          'La limpieza se completó, pero no se pudo guardar la entrada en el historial.',
+          'warning',
+          6000
+        );
+      }
 
       addToast(
         `✓ Limpieza completada. Se liberaron ${formatBytes(bytesFreed)} de espacio.`,

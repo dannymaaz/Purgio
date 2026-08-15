@@ -1,4 +1,5 @@
 mod cleaner;
+mod persistence;
 mod safety;
 mod scanner;
 mod startup;
@@ -170,7 +171,12 @@ pub fn run() {
             kill_background_process,
             kill_background_process_group,
             check_for_updates,
-            install_update
+            install_update,
+            persistence::load_app_state,
+            persistence::save_preferences,
+            persistence::migrate_legacy_state,
+            persistence::add_history_entry,
+            persistence::clear_history
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
