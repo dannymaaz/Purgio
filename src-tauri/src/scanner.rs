@@ -289,7 +289,7 @@ pub fn scan_system_files() -> Vec<CleanableItem> {
                     "mac_user_logs",
                     "Registros de Logs de Usuario",
                     size,
-                    logs.to_str().unwrap_or(""),
+                    vec![logs.to_str().unwrap_or("").to_string()],
                     RiskLevel::Safe,
                     "Archivos de registro de diagnÃ³sticos de software del usuario.",
                     "No afecta el sistema, solo elimina reportes de auditorÃ­a de errores antiguos.",
@@ -390,7 +390,7 @@ pub fn scan_system_files() -> Vec<CleanableItem> {
                 ));
             }
 
-            // â”€â”€ Snap cache â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            // â”€â”€ Snap cache â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             let snap_path = home_path.join("snap");
             if snap_path.exists() {
                 let mut snap_size = 0u64;
@@ -450,7 +450,7 @@ pub fn scan_system_files() -> Vec<CleanableItem> {
                 }
             }
 
-            // â”€â”€ Yarn global cache â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            // â”€â”€ Yarn global cache â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             let yarn_cache = home_path.join(".yarn/cache");
             if yarn_cache.exists() {
                 let size = get_dir_size(&yarn_cache);
