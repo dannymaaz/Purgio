@@ -139,14 +139,8 @@ fn get_browser_paths() -> Vec<(String, PathBuf)> {
         if let Ok(home) = env::var("HOME") {
             let home_path = PathBuf::from(home);
             let app_support = home_path.join("Library/Application Support");
-            paths.push((
-                "Chrome".to_string(),
-                app_support.join("Google/Chrome"),
-            ));
-            paths.push((
-                "Edge".to_string(),
-                app_support.join("Microsoft Edge"),
-            ));
+            paths.push(("Chrome".to_string(), app_support.join("Google/Chrome")));
+            paths.push(("Edge".to_string(), app_support.join("Microsoft Edge")));
             paths.push((
                 "Brave".to_string(),
                 app_support.join("BraveSoftware/Brave-Browser"),
@@ -159,10 +153,7 @@ fn get_browser_paths() -> Vec<(String, PathBuf)> {
                 "Firefox".to_string(),
                 home_path.join("Library/Application Support/Firefox/Profiles"),
             ));
-            paths.push((
-                "Safari".to_string(),
-                home_path.join("Library/Safari"),
-            ));
+            paths.push(("Safari".to_string(), home_path.join("Library/Safari")));
         }
     }
 
@@ -171,19 +162,13 @@ fn get_browser_paths() -> Vec<(String, PathBuf)> {
         if let Ok(home) = env::var("HOME") {
             let home_path = PathBuf::from(home);
             let config = home_path.join(".config");
-            paths.push((
-                "Chrome".to_string(),
-                config.join("google-chrome"),
-            ));
+            paths.push(("Chrome".to_string(), config.join("google-chrome")));
             paths.push((
                 "Brave".to_string(),
                 config.join("BraveSoftware/Brave-Browser"),
             ));
             paths.push(("Opera".to_string(), config.join("opera")));
-            paths.push((
-                "Firefox".to_string(),
-                home_path.join(".mozilla/firefox"),
-            ));
+            paths.push(("Firefox".to_string(), home_path.join(".mozilla/firefox")));
             paths.push(("Chromium".to_string(), config.join("chromium")));
         }
     }
@@ -338,28 +323,6 @@ pub fn scan_system_files() -> Vec<CleanableItem> {
                     "Eliminar solo si no necesitas diagnosticar cierres o bloqueos recientes.",
                     "diagnostics",
                 ));
-            }
-        }
-
-        // DirectX Shader Cache. Microsoft documenta las cachés D3D12 por defecto como
-        // almacenamiento temporal que puede ser limpiado por Disk Cleanup.
-        if let Ok(local_appdata) = env::var("LOCALAPPDATA") {
-            let d3d_cache = PathBuf::from(local_appdata).join("D3DSCache");
-            if d3d_cache.exists() {
-                let size = get_dir_size(&d3d_cache);
-                if size > 0 {
-                    items.push(CleanableItem::new(
-                        "win_directx_shader_cache",
-                        "Caché de Shaders de DirectX",
-                        size,
-                        vec![d3d_cache.to_string_lossy().to_string()],
-                        RiskLevel::Safe,
-                        "Shaders compilados almacenados temporalmente por DirectX para reducir trabajo repetido de la GPU.",
-                        "Se liberará el almacenamiento temporal detectado. Juegos y aplicaciones pueden recompilar shaders cuando vuelvan a ejecutarse.",
-                        "Seguro de eliminar; Windows y las aplicaciones recrean la caché cuando es necesaria.",
-                        "cache",
-                    ));
-                }
             }
         }
 
@@ -859,8 +822,9 @@ pub fn scan_browser_files() -> Vec<CleanableItem> {
                                         if fname.ends_with(".part") {
                                             if let Ok(meta) = file.metadata() {
                                                 artifact_size += meta.len();
-                                                artifact_paths
-                                                    .push(file.path().to_string_lossy().to_string());
+                                                artifact_paths.push(
+                                                    file.path().to_string_lossy().to_string(),
+                                                );
                                             }
                                         }
                                     }
@@ -878,7 +842,8 @@ pub fn scan_browser_files() -> Vec<CleanableItem> {
                                 if fname.ends_with(".crdownload") {
                                     if let Ok(meta) = file.metadata() {
                                         artifact_size += meta.len();
-                                        artifact_paths.push(file.path().to_string_lossy().to_string());
+                                        artifact_paths
+                                            .push(file.path().to_string_lossy().to_string());
                                     }
                                 }
                             }
@@ -953,7 +918,6 @@ pub fn scan_browser_files() -> Vec<CleanableItem> {
 
     items
 }
-
 
 #[cfg(all(test, target_os = "windows"))]
 mod windows_tests {

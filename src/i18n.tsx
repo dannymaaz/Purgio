@@ -278,7 +278,6 @@ const EN_MESSAGES = {
   // Backend metadata shown to the user
   'Archivos Temporales de Usuario': 'User Temporary Files',
   'Archivos Temporales del Sistema': 'System Temporary Files',
-  'Caché de Shaders de DirectX': 'DirectX Shader Cache',
   'Volcados de Memoria de Errores de Windows': 'Windows Error Memory Dumps',
   'Volcados de Errores de Aplicaciones': 'Application Error Dumps',
   'Archivos .dmp creados en tu perfil cuando una aplicación falla y Windows guarda información para diagnóstico.': '.dmp files created in your profile when an application fails and Windows saves diagnostic information.',
@@ -293,9 +292,6 @@ const EN_MESSAGES = {
   'Bases de datos thumbcache_*.db que Windows Explorer usa para acelerar vistas previas.': 'thumbcache_*.db databases used by Windows Explorer to speed up previews.',
   'Solo se eliminarán las bases de miniaturas mostradas en el Cleanup Plan. Windows puede regenerarlas cuando vuelvas a explorar carpetas.': 'Only the thumbnail databases shown in the Cleanup Plan will be removed. Windows can regenerate them when you browse folders again.',
   'Seguro de eliminar; las miniaturas se reconstruyen bajo demanda.': 'Safe to remove; thumbnails are rebuilt on demand.',
-  'Shaders compilados almacenados temporalmente por DirectX para reducir trabajo repetido de la GPU.': 'Compiled shaders stored temporarily by DirectX to reduce repeated GPU work.',
-  'Se liberará el almacenamiento temporal detectado. Juegos y aplicaciones pueden recompilar shaders cuando vuelvan a ejecutarse.': 'Detected temporary storage will be freed. Games and applications may recompile shaders the next time they run.',
-  'Seguro de eliminar; Windows y las aplicaciones recrean la caché cuando es necesaria.': 'Safe to remove; Windows and applications recreate the cache when needed.',
   'Caché de Miniaturas': 'Thumbnail Cache',
   'Reportes de Error de Windows': 'Windows Error Reports',
   'Caché de Windows Update': 'Windows Update Cache',
