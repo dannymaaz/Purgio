@@ -43,7 +43,7 @@ interface UpdateInfo {
 
 interface AppPreferences {
   theme: 'dark' | 'light' | 'system';
-  language: 'es' | 'en';
+  language: LanguagePreference;
   confirm_delete: boolean;
   confirm_disable: boolean;
   show_sensitive: boolean;
@@ -168,7 +168,7 @@ export const App: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [addToast, t]);
 
   // Persistir cambios solo después de una hidratación correcta, evitando que los
   // defaults del primer render sobrescriban preferencias existentes.
@@ -191,7 +191,7 @@ export const App: React.FC = () => {
     }, 150);
 
     return () => window.clearTimeout(timer);
-  }, [settingsHydrated, theme, lang, confirmDelete, confirmDisable, showSensitive]);
+  }, [settingsHydrated, theme, lang, confirmDelete, confirmDisable, showSensitive, addToast, t]);
 
   // Tema de Color Dinámico — la persistencia se gestiona en app_config_dir.
   useEffect(() => {
@@ -241,7 +241,7 @@ export const App: React.FC = () => {
       setUpdateInfo(info);
       if (info.has_update && !updateDismissed) {
         addToast(
-          `Nueva versión ${info.latest_version} disponible. Ve a Configuración para actualizar.`,
+          `${t('Nueva versión disponible:')} ${info.latest_version}. ${t('Ve a Configuración para actualizar.')}`,
           'info',
           8000
         );
@@ -249,7 +249,7 @@ export const App: React.FC = () => {
     } catch (e) {
       console.error('Error al verificar actualizaciones:', e);
     }
-  }, [updateDismissed, addToast]);
+  }, [updateDismissed, addToast, t]);
 
   useEffect(() => {
     // Verificar actualizaciones 3 segundos después de iniciar (no bloqueante)
@@ -265,7 +265,7 @@ export const App: React.FC = () => {
       // El backend reinicia Purgio únicamente después de verificar e instalar el paquete.
     } catch (e) {
       console.error('Error al instalar la actualización:', e);
-      addToast(`No se pudo instalar la actualización: ${String(e)}`, 'error', 7000);
+      addToast(`${t('No se pudo instalar la actualización:')} ${String(e)}`, 'error', 7000);
       setIsUpdating(false);
     }
   }, [addToast, t]);
@@ -334,10 +334,10 @@ export const App: React.FC = () => {
         setLastScanTimestamp(Date.now());
       } else {
         setScanStatus('idle');
-        addToast('Error al analizar el sistema. Intenta de nuevo.', 'error');
+        addToast(t('Error al analizar el sistema. Intenta de nuevo.'), 'error');
       }
     }, 1200);
-  }, [runScan, addToast]);
+  }, [runScan, addToast, t]);
 
   // Limpieza de Elementos Seleccionados
   const executeClean = useCallback(async (selected: CleanableItem[]) => {
@@ -352,14 +352,14 @@ export const App: React.FC = () => {
       } catch (historyError) {
         console.error('La limpieza terminó pero no se pudo guardar el historial:', historyError);
         addToast(
-          'La limpieza se completó, pero no se pudo guardar la entrada en el historial.',
+          t('La limpieza se completó, pero no se pudo guardar la entrada en el historial.'),
           'warning',
           6000
         );
       }
 
       addToast(
-        `✓ Limpieza completada. Se liberaron ${formatBytes(bytesFreed)} de espacio.`,
+        `${t('✓ Limpieza completada. Se liberaron')} ${formatBytes(bytesFreed, activeLanguage)} ${t('de espacio.')}`,
         'success',
         5000
       );
@@ -369,11 +369,11 @@ export const App: React.FC = () => {
       fetchSystemStats();
     } catch (e) {
       console.error('Error durante la limpieza:', e);
-      addToast(`Error durante la limpieza: ${String(e)}`, 'error', 6000);
+      addToast(`${t('Error durante la limpieza:')} ${String(e)}`, 'error', 6000);
     } finally {
       setIsCleaning(false);
     }
-  }, [runScan, fetchSystemStats, addToast]);
+  }, [runScan, fetchSystemStats, addToast, activeLanguage, t]);
 
   const handleCleanTrigger = useCallback((selected: CleanableItem[]) => {
     if (confirmDelete) {
@@ -400,14 +400,14 @@ export const App: React.FC = () => {
       await invoke('disable_startup', { id: item.id, locationKey: item.location_key });
       const startups = await invoke<StartupItem[]>('get_startup_items');
       setStartupItems(startups);
-      addToast(`"${item.name}" desactivado del arranque.`, 'success');
+      addToast(`"${item.name}" ${t('desactivado del arranque.')}`, 'success');
     } catch (e) {
       console.error('Error al desactivar el programa de arranque:', e);
-      addToast(`No se pudo desactivar "${item.name}".`, 'error');
+      addToast(`${t('No se pudo desactivar')} "${item.name}".`, 'error');
     } finally {
       setIsActioning(false);
     }
-  }, [addToast]);
+  }, [addToast, t]);
 
   const handleEnable = useCallback(async (item: StartupItem) => {
     setIsActioning(true);
@@ -419,14 +419,14 @@ export const App: React.FC = () => {
       });
       const startups = await invoke<StartupItem[]>('get_startup_items');
       setStartupItems(startups);
-      addToast(`"${item.name}" activado al inicio.`, 'success');
+      addToast(`"${item.name}" ${t('activado al inicio.')}`, 'success');
     } catch (e) {
       console.error('Error al activar el programa de arranque:', e);
-      addToast(`No se pudo activar "${item.name}".`, 'error');
+      addToast(`${t('No se pudo activar')} "${item.name}".`, 'error');
     } finally {
       setIsActioning(false);
     }
-  }, [addToast]);
+  }, [addToast, t]);
 
   // Finalizar procesos de segundo plano
   const handleKillProcess = useCallback(async (process: ProcessItem) => {
@@ -436,14 +436,14 @@ export const App: React.FC = () => {
       const bgs = await invoke<ProcessItem[]>('get_background_apps');
       setBackgroundProcesses(bgs);
       fetchSystemStats();
-      addToast(`Proceso "${process.name}" finalizado.`, 'success');
+      addToast(`${t('Proceso')} "${process.name}" ${t('finalizado.')}`, 'success');
     } catch (e) {
       console.error('Error al cerrar el proceso de segundo plano:', e);
-      addToast(`No se pudo cerrar "${process.name}". Puede requerir permisos elevados.`, 'error');
+      addToast(`${t('No se pudo cerrar')} "${process.name}". ${t('Puede requerir permisos elevados.')}`, 'error');
     } finally {
       setIsActioning(false);
     }
-  }, [fetchSystemStats, addToast]);
+  }, [fetchSystemStats, addToast, t]);
 
   // Datos globales del resumen (memoizados para no recalcular en cada render)
   const potentialSpace = useMemo(
@@ -557,21 +557,21 @@ export const App: React.FC = () => {
       {hasUpdate && updateInfo && (
         <div className="update-banner">
           <div className="update-banner-text">
-            <span>🔔 Nueva versión disponible:</span>
+            <span>{t('🔔 Nueva versión disponible')}</span>
             <span className="update-banner-version">{updateInfo.latest_version}</span>
-            <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>(instalada: {updateInfo.current_version})</span>
+            <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>({t('instalada:')} {updateInfo.current_version})</span>
           </div>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             <button
               className="update-btn"
               onClick={() => setShowUpdateModal(true)}
             >
-              Ver actualización
+              {t('Ver actualización')}
             </button>
             <button
               className="update-dismiss"
               onClick={() => setUpdateDismissed(true)}
-              aria-label="Ignorar actualización"
+              aria-label={t('Ignorar actualización')}
             >
               ✕
             </button>
@@ -600,13 +600,13 @@ export const App: React.FC = () => {
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header danger">
               <WarningIcon size={20} className="danger" />
-              Confirmar Eliminación
+              {t('Confirmar Eliminación')}
             </div>
             <div className="modal-body">
               <p style={{ marginBottom: '12px' }}>
                 Se eliminarán <strong>{itemsToClean.length} elementos</strong> liberando{' '}
                 <strong style={{ color: 'var(--accent-aqua)' }}>
-                  {formatBytes(itemsToClean.reduce((sum, i) => sum + i.size, 0))}
+                  {formatBytes(itemsToClean.reduce((sum, i) => sum + i.size, 0), activeLanguage)}
                 </strong>{' '}
                 de espacio. Esta acción es irreversible.
               </p>
@@ -623,8 +623,8 @@ export const App: React.FC = () => {
               }}>
                 {itemsToClean.slice(0, 6).map((item, i) => (
                   <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', borderBottom: '1px solid var(--border-color)' }}>
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: '8px' }}>{item.name}</span>
-                    <span style={{ color: 'var(--text-muted)', flexShrink: 0 }}>{formatBytes(item.size)}</span>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: '8px' }}>{translate(activeLanguage, item.name)}</span>
+                    <span style={{ color: 'var(--text-muted)', flexShrink: 0 }}>{formatBytes(item.size, activeLanguage)}</span>
                   </div>
                 ))}
                 {itemsToClean.length > 6 && (
@@ -640,7 +640,7 @@ export const App: React.FC = () => {
                 onClick={() => setShowCleanModal(false)}
                 disabled={isCleaning}
               >
-                Cancelar
+                {t('Cancelar')}
               </button>
               <button
                 className="btn btn-danger"
@@ -650,7 +650,7 @@ export const App: React.FC = () => {
                 }}
                 disabled={isCleaning}
               >
-                {isCleaning ? 'Limpiando...' : 'Limpiar definitivamente'}
+                {isCleaning ? t('Limpiando...') : t('Limpiar definitivamente')}
               </button>
             </div>
           </div>
@@ -663,18 +663,18 @@ export const App: React.FC = () => {
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <WarningIcon size={20} className="warning" />
-              Desactivar del Arranque
+              {t('Desactivar del Arranque')}
             </div>
             <div className="modal-body">
               <p>
                 ¿Desactivar el inicio automático de <strong>{itemToDisable.name}</strong>?
               </p>
               <p style={{ marginTop: '8px', fontSize: '13px', color: 'var(--text-secondary)' }}>
-                El programa no se ejecutará al encender el equipo. Podrás abrirlo manualmente y volver a activarlo en cualquier momento.
+                {t('El programa no se ejecutará al encender el equipo. Podrás abrirlo manualmente y volver a activarlo en cualquier momento.')}
               </p>
               {!itemToDisable.is_safe_to_disable && (
                 <p style={{ marginTop: '8px', fontSize: '13px', color: 'var(--warning)', background: 'var(--warning-bg)', padding: '8px', borderRadius: '6px' }}>
-                  ⚠️ Este programa puede estar relacionado con drivers o seguridad del sistema. Desactivarlo con cuidado.
+                  {t('⚠️ Este programa puede estar relacionado con drivers o seguridad del sistema. Desactivarlo con cuidado.')}
                 </p>
               )}
             </div>
@@ -684,7 +684,7 @@ export const App: React.FC = () => {
                 onClick={() => setShowDisableModal(false)}
                 disabled={isActioning}
               >
-                Cancelar
+                {t('Cancelar')}
               </button>
               <button
                 className="btn btn-primary"
@@ -694,7 +694,7 @@ export const App: React.FC = () => {
                 }}
                 disabled={isActioning}
               >
-                Desactivar
+                {t('Desactivar')}
               </button>
             </div>
           </div>
@@ -706,7 +706,7 @@ export const App: React.FC = () => {
         <div className="modal-overlay" onClick={() => setShowUpdateModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header" style={{ color: 'var(--accent-aqua)' }}>
-              🔔 Nueva versión disponible
+              {t('🔔 Nueva versión disponible')}
             </div>
             <div className="modal-body">
               <p>
@@ -729,7 +729,7 @@ export const App: React.FC = () => {
                 </div>
               )}
               <p style={{ marginTop: '12px', fontSize: '13px', color: 'var(--text-secondary)' }}>
-                Purgio descargará el paquete correspondiente a este sistema, verificará su firma criptográfica y solo entonces lo instalará y reiniciará la aplicación. ¿Deseas continuar?
+                {t('Purgio descargará el paquete correspondiente a este sistema, verificará su firma criptográfica y solo entonces lo instalará y reiniciará la aplicación. ¿Deseas continuar?')}
               </p>
             </div>
             <div className="modal-actions">
@@ -738,14 +738,14 @@ export const App: React.FC = () => {
                 onClick={() => { setShowUpdateModal(false); setUpdateDismissed(true); }}
                 disabled={isUpdating}
               >
-                Ahora no
+                {t('Ahora no')}
               </button>
               <button
                 className="btn btn-primary"
                 onClick={installUpdate}
                 disabled={isUpdating}
               >
-                {isUpdating ? 'Actualizando…' : 'Instalar actualización'}
+                {isUpdating ? t('Actualizando…') : t('Instalar actualización')}
               </button>
             </div>
           </div>
