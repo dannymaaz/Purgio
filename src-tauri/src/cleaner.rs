@@ -129,7 +129,9 @@ pub fn clean_path_with_report(path_str: &str, _is_sensitive: bool) -> CleanupPat
                 path: path_str.to_string(),
                 bytes_freed: 0,
                 status: CleanupStatus::Failed,
-                issues: vec![format!("No se pudo eliminar el archivo autorizado: {error}")],
+                issues: vec![format!(
+                    "No se pudo eliminar el archivo autorizado: {error}"
+                )],
             },
         };
     }
@@ -161,9 +163,9 @@ fn clean_directory(path: &Path, remove_root: bool) -> TraversalReport {
     let metadata = match fs::symlink_metadata(path) {
         Ok(metadata) => metadata,
         Err(error) => {
-            report
-                .errors
-                .push(format!("No se pudo inspeccionar un directorio autorizado: {error}"));
+            report.errors.push(format!(
+                "No se pudo inspeccionar un directorio autorizado: {error}"
+            ));
             return report;
         }
     };
@@ -193,9 +195,9 @@ fn clean_directory(path: &Path, remove_root: bool) -> TraversalReport {
     let canonical = match fs::canonicalize(path) {
         Ok(canonical) => canonical,
         Err(error) => {
-            report
-                .errors
-                .push(format!("No se pudo canonicalizar un directorio autorizado: {error}"));
+            report.errors.push(format!(
+                "No se pudo canonicalizar un directorio autorizado: {error}"
+            ));
             return report;
         }
     };
@@ -219,9 +221,9 @@ fn clean_directory(path: &Path, remove_root: bool) -> TraversalReport {
         let entry = match entry {
             Ok(entry) => entry,
             Err(error) => {
-                report
-                    .errors
-                    .push(format!("No se pudo leer una entrada del directorio: {error}"));
+                report.errors.push(format!(
+                    "No se pudo leer una entrada del directorio: {error}"
+                ));
                 continue;
             }
         };
@@ -237,9 +239,9 @@ fn clean_directory(path: &Path, remove_root: bool) -> TraversalReport {
         let entry_metadata = match fs::symlink_metadata(&entry_path) {
             Ok(metadata) => metadata,
             Err(error) => {
-                report
-                    .errors
-                    .push(format!("No se pudo inspeccionar una entrada autorizada: {error}"));
+                report.errors.push(format!(
+                    "No se pudo inspeccionar una entrada autorizada: {error}"
+                ));
                 continue;
             }
         };
@@ -270,9 +272,9 @@ fn clean_directory(path: &Path, remove_root: bool) -> TraversalReport {
             let size = entry_metadata.len();
             match fs::remove_file(&entry_path) {
                 Ok(()) => report.bytes_freed += size,
-                Err(error) => report
-                    .errors
-                    .push(format!("No se pudo eliminar un archivo autorizado: {error}")),
+                Err(error) => report.errors.push(format!(
+                    "No se pudo eliminar un archivo autorizado: {error}"
+                )),
             }
         } else if entry_metadata.is_dir() {
             report.absorb(clean_directory(&entry_path, true));
@@ -281,9 +283,9 @@ fn clean_directory(path: &Path, remove_root: bool) -> TraversalReport {
 
     if remove_root && report.skipped == 0 && report.errors.is_empty() {
         if let Err(error) = fs::remove_dir(path) {
-            report
-                .errors
-                .push(format!("No se pudo retirar un directorio ya vacío: {error}"));
+            report.errors.push(format!(
+                "No se pudo retirar un directorio ya vacío: {error}"
+            ));
         }
     }
 
