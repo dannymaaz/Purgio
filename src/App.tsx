@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { locale as getSystemLocale } from '@tauri-apps/plugin-os';
 
 // Componentes y Páginas
 import { TitleBar } from './components/TitleBar';
@@ -17,6 +18,7 @@ import { ToastContainer, useToast } from './components/Toast';
 // Utilidades
 import { formatBytes } from './utils/format';
 import { addHistoryEntry, clearLegacyHistory, readLegacyHistory } from './utils/history';
+import { I18nProvider, LanguagePreference, resolveLanguage, translate } from './i18n';
 
 // Tipos correctamente tipados desde el backend
 interface SystemStats {
@@ -59,11 +61,12 @@ export const App: React.FC = () => {
 
   // Ajustes y Configuración — defaults seguros hasta hidratar app_config_dir.
   const [theme, setTheme] = useState<'dark' | 'light' | 'system'>('system');
-  const [lang, setLang] = useState<'es' | 'en'>('es');
+  const [lang, setLang] = useState<LanguagePreference>('system');
   const [confirmDelete, setConfirmDelete] = useState<boolean>(true);
   const [confirmDisable, setConfirmDisable] = useState<boolean>(true);
   const [showSensitive, setShowSensitive] = useState<boolean>(false);
   const [settingsHydrated, setSettingsHydrated] = useState<boolean>(false);
+  const [systemLocale, setSystemLocale] = useState<string | null>(null);
 
   // Estados de datos globales (tipado correcto, no 'any')
   const [systemStats, setSystemStats] = useState<SystemStats | null>(null);
@@ -91,6 +94,34 @@ export const App: React.FC = () => {
 
   // Toast notifications
   const { toasts, addToast, removeToast } = useToast();
+
+
+  // El idioma efectivo se resuelve de forma separada a la preferencia persistida.
+  // `system` sigue los cambios del locale del sistema entre reinicios sin convertirlos
+  // en un override guardado por accidente.
+  const activeLanguage = useMemo(
+    () => resolveLanguage(lang, systemLocale),
+    [lang, systemLocale]
+  );
+  const t = useCallback(
+    (source: string, values?: Record<string, string | number>) => translate(activeLanguage, source, values),
+    [activeLanguage]
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    getSystemLocale()
+      .then((detected) => {
+        if (!cancelled) setSystemLocale(detected ?? navigator.language ?? null);
+      })
+      .catch((error) => {
+        console.error('Error al detectar el idioma del sistema:', error);
+        if (!cancelled) setSystemLocale(navigator.language ?? null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
 
   // Cargar configuración persistente desde app_config_dir. localStorage se usa
@@ -128,7 +159,7 @@ export const App: React.FC = () => {
       } catch (error) {
         console.error('Error al cargar la configuración persistente:', error);
         if (!cancelled) {
-          addToast('No se pudo cargar la configuración guardada; se mantienen valores seguros sin sobrescribir el archivo.', 'error', 7000);
+          addToast(t('No se pudo cargar la configuración guardada; se mantienen valores seguros sin sobrescribir el archivo.'), 'error', 7000);
         }
       }
     };
@@ -155,7 +186,7 @@ export const App: React.FC = () => {
         },
       }).catch((error) => {
         console.error('Error al guardar la configuración:', error);
-        addToast('No se pudieron guardar los cambios de configuración.', 'error', 5000);
+        addToast(t('No se pudieron guardar los cambios de configuración.'), 'error', 5000);
       });
     }, 150);
 
@@ -229,7 +260,7 @@ export const App: React.FC = () => {
   const installUpdate = useCallback(async () => {
     setIsUpdating(true);
     try {
-      addToast('Descargando y verificando la actualización…', 'info', 5000);
+      addToast(t('Descargando y verificando la actualización…'), 'info', 5000);
       await invoke('install_update');
       // El backend reinicia Purgio únicamente después de verificar e instalar el paquete.
     } catch (e) {
@@ -237,7 +268,7 @@ export const App: React.FC = () => {
       addToast(`No se pudo instalar la actualización: ${String(e)}`, 'error', 7000);
       setIsUpdating(false);
     }
-  }, [addToast]);
+  }, [addToast, t]);
 
   // Cargar procesos en segundo plano y arranque al entrar a sus pestañas
   useEffect(() => {
@@ -517,7 +548,8 @@ export const App: React.FC = () => {
   const hasUpdate = updateInfo?.has_update && !updateDismissed;
 
   return (
-    <div className="app-container">
+    <I18nProvider language={activeLanguage}>
+      <div className="app-container">
       <Splash />
       <TitleBar systemStats={systemStats} hasUpdate={hasUpdate} />
 
@@ -719,6 +751,7 @@ export const App: React.FC = () => {
           </div>
         </div>
       )}
-    </div>
+      </div>
+    </I18nProvider>
   );
 };
