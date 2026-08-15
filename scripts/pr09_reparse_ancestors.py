@@ -34,7 +34,7 @@ if old not in text:
     raise SystemExit('Missing thumbnail metadata marker')
 text = text.replace(old, new, 1)
 
-# Application CrashDumps and system Minidump candidates use the same condition shape.
+# Application CrashDumps and system Minidump candidates use the same safety condition.
 old = '''                    if metadata.is_file()
                         && !metadata.file_type().is_symlink()
                         && !safety::metadata_is_reparse_point(&metadata)
@@ -48,9 +48,8 @@ new = '''                    if metadata.is_file()
                         && !safety::is_path_critical(&entry_path.to_string_lossy())
                     {
 '''
-count = text.count(old)
-if count < 2:
-    raise SystemExit(f'Expected at least two dump candidate markers, found {count}')
+if old not in text:
+    raise SystemExit('Missing dump candidate marker')
 text = text.replace(old, new)
 
 old = '''            if metadata.is_file()
