@@ -1,0 +1,68 @@
+name: "PR-04 UI migration"
+
+on:
+  push:
+    branches:
+      - agent/pr-04-tauri-updater
+    paths:
+      - '.github/workflows/pr04-ui-migration.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: "Checkout PR branch"
+        uses: actions/checkout@v7
+        with:
+          ref: agent/pr-04-tauri-updater
+
+      - name: "Wire signed updater UI"
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("src/App.tsx")
+          text = path.read_text(encoding="utf-8")
+
+          replacements = [
+              (
+                  "  const [showUpdateModal, setShowUpdateModal] = useState<boolean>(false);\n  const [updateDismissed, setUpdateDismissed] = useState<boolean>(false);",
+                  "  const [showUpdateModal, setShowUpdateModal] = useState<boolean>(false);\n  const [updateDismissed, setUpdateDismissed] = useState<boolean>(false);\n  const [isUpdating, setIsUpdating] = useState<boolean>(false);",
+              ),
+              (
+                  "  useEffect(() => {\n    // Verificar actualizaciones 3 segundos después de iniciar (no bloqueante)\n    const timer = setTimeout(checkForUpdates, 3000);\n    return () => clearTimeout(timer);\n  }, [checkForUpdates]);",
+                  "  useEffect(() => {\n    // Verificar actualizaciones 3 segundos después de iniciar (no bloqueante)\n    const timer = setTimeout(checkForUpdates, 3000);\n    return () => clearTimeout(timer);\n  }, [checkForUpdates]);\n\n  const installUpdate = useCallback(async () => {\n    setIsUpdating(true);\n    try {\n      addToast('Descargando y verificando la actualización…', 'info', 5000);\n      await invoke('install_update');\n      // El backend reinicia Purgio únicamente después de verificar e instalar el paquete.\n    } catch (e) {\n      console.error('Error al instalar la actualización:', e);\n      addToast(`No se pudo instalar la actualización: ${String(e)}`, 'error', 7000);\n      setIsUpdating(false);\n    }\n  }, [addToast]);",
+              ),
+              (
+                  "                Al actualizar, Purgio descargará el instalador y se reiniciará automáticamente. ¿Deseas continuar?",
+                  "                Purgio descargará el paquete correspondiente a este sistema, verificará su firma criptográfica y solo entonces lo instalará y reiniciará la aplicación. ¿Deseas continuar?",
+              ),
+              (
+                  "                onClick={() => { setShowUpdateModal(false); setUpdateDismissed(true); }}\n              >\n                Ahora no",
+                  "                onClick={() => { setShowUpdateModal(false); setUpdateDismissed(true); }}\n                disabled={isUpdating}\n              >\n                Ahora no",
+              ),
+              (
+                  "              {updateInfo.download_url ? (\n                <a\n                  href={updateInfo.download_url}\n                  target=\"_blank\"\n                  rel=\"noopener noreferrer\"\n                  className=\"btn btn-primary\"\n                  style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '6px' }}\n                  onClick={() => setShowUpdateModal(false)}\n                >\n                  Descargar actualización\n                </a>\n              ) : (\n                <button className=\"btn btn-primary\" disabled>\n                  Sin URL de descarga\n                </button>\n              )}",
+                  "              <button\n                className=\"btn btn-primary\"\n                onClick={installUpdate}\n                disabled={isUpdating}\n              >\n                {isUpdating ? 'Actualizando…' : 'Instalar actualización'}\n              </button>",
+              ),
+          ]
+
+          for old, new in replacements:
+              if old not in text:
+                  raise SystemExit(f"Expected App.tsx snippet not found: {old[:80]!r}")
+              text = text.replace(old, new, 1)
+
+          path.write_text(text, encoding="utf-8")
+
+      - name: "Commit migration and remove one-off workflow"
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/pr04-ui-migration.yml
+          git add src/App.tsx
+          git commit -m "Wire signed in-app updater UI"
+          git push origin HEAD:agent/pr-04-tauri-updater
