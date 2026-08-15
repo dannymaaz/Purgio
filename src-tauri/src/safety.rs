@@ -2,6 +2,12 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+#[cfg(target_os = "windows")]
+use std::os::windows::fs::MetadataExt;
+
+#[cfg(target_os = "windows")]
+const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0000_0400;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RiskLevel {
     Safe,
@@ -91,6 +97,29 @@ pub fn is_path_critical(path_str: &str) -> bool {
     false
 }
 
+#[cfg(target_os = "windows")]
+fn has_windows_reparse_attribute(file_attributes: u32) -> bool {
+    file_attributes & FILE_ATTRIBUTE_REPARSE_POINT != 0
+}
+
+/// Detecta objetos del sistema de archivos que pueden redirigir a otro destino.
+///
+/// En Windows esto inspecciona FILE_ATTRIBUTE_REPARSE_POINT, lo que cubre
+/// junctions y otros reparse points además de enlaces simbólicos. En Unix la
+/// protección equivalente se mantiene mediante `file_type().is_symlink()`.
+pub fn metadata_is_reparse_point(metadata: &fs::Metadata) -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        return has_windows_reparse_attribute(metadata.file_attributes());
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = metadata;
+        false
+    }
+}
+
 /// Valida y canonicaliza un objetivo antes de cualquier operación destructiva.
 ///
 /// La comprobación se realiza tanto sobre la ruta recibida como sobre su ruta
@@ -122,6 +151,13 @@ pub fn validate_cleanup_target(path_str: &str) -> Result<PathBuf, String> {
 
     let metadata = fs::symlink_metadata(path)
         .map_err(|e| format!("No se pudo validar la ruta {}: {}", path_str, e))?;
+
+    if metadata_is_reparse_point(&metadata) {
+        return Err(format!(
+            "Acción bloqueada: el objetivo es un reparse point o junction: {}",
+            path_str
+        ));
+    }
 
     if metadata.file_type().is_symlink() {
         return Err(format!(
@@ -197,5 +233,15 @@ mod tests {
     fn rejects_relative_cleanup_targets() {
         let result = validate_cleanup_target("relative/path");
         assert!(result.is_err());
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn detects_windows_reparse_attributes() {
+        assert!(has_windows_reparse_attribute(FILE_ATTRIBUTE_REPARSE_POINT));
+        assert!(has_windows_reparse_attribute(
+            FILE_ATTRIBUTE_REPARSE_POINT | 0x10
+        ));
+        assert!(!has_windows_reparse_attribute(0x20));
     }
 }
