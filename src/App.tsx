@@ -18,7 +18,7 @@ import { ToastContainer, useToast } from './components/Toast';
 // Utilidades
 import { formatBytes } from './utils/format';
 import { addHistoryEntry, clearLegacyHistory, readLegacyHistory } from './utils/history';
-import { I18nProvider, LanguagePreference, resolveLanguage, translate } from './i18n';
+import { I18nProvider, LanguagePreference, resolveLanguage, translateBackendText } from './i18n';
 
 // Tipos correctamente tipados desde el backend
 interface SystemStats {
@@ -604,11 +604,10 @@ export const App: React.FC = () => {
             </div>
             <div className="modal-body">
               <p style={{ marginBottom: '12px' }}>
-                Se eliminarán <strong>{itemsToClean.length} elementos</strong> liberando{' '}
-                <strong style={{ color: 'var(--accent-aqua)' }}>
-                  {formatBytes(itemsToClean.reduce((sum, i) => sum + i.size, 0), activeLanguage)}
-                </strong>{' '}
-                de espacio. Esta acción es irreversible.
+                {t('Se eliminarán {{count}} elementos liberando {{size}} de espacio. Esta acción es irreversible.', {
+                  count: itemsToClean.length,
+                  size: formatBytes(itemsToClean.reduce((sum, item) => sum + item.size, 0), activeLanguage),
+                })}
               </p>
               {/* Lista de los primeros 5 elementos */}
               <div style={{
@@ -623,13 +622,13 @@ export const App: React.FC = () => {
               }}>
                 {itemsToClean.slice(0, 6).map((item, i) => (
                   <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', borderBottom: '1px solid var(--border-color)' }}>
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: '8px' }}>{translate(activeLanguage, item.name)}</span>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: '8px' }}>{translateBackendText(activeLanguage, item.name)}</span>
                     <span style={{ color: 'var(--text-muted)', flexShrink: 0 }}>{formatBytes(item.size, activeLanguage)}</span>
                   </div>
                 ))}
                 {itemsToClean.length > 6 && (
                   <div style={{ color: 'var(--text-muted)', padding: '3px 0', fontStyle: 'italic' }}>
-                    …y {itemsToClean.length - 6} más
+                    {t('…y {{count}} más', { count: itemsToClean.length - 6 })}
                   </div>
                 )}
               </div>
@@ -667,7 +666,7 @@ export const App: React.FC = () => {
             </div>
             <div className="modal-body">
               <p>
-                ¿Desactivar el inicio automático de <strong>{itemToDisable.name}</strong>?
+                {t('¿Desactivar el inicio automático de {{name}}?', { name: itemToDisable.name })}
               </p>
               <p style={{ marginTop: '8px', fontSize: '13px', color: 'var(--text-secondary)' }}>
                 {t('El programa no se ejecutará al encender el equipo. Podrás abrirlo manualmente y volver a activarlo en cualquier momento.')}
@@ -710,8 +709,10 @@ export const App: React.FC = () => {
             </div>
             <div className="modal-body">
               <p>
-                <strong style={{ color: 'var(--accent-aqua)' }}>Purgio {updateInfo.latest_version}</strong>{' '}
-                está disponible. La versión instalada actualmente es {updateInfo.current_version}.
+                {t('Purgio {{latest}} está disponible. La versión instalada actualmente es {{current}}.', {
+                  latest: updateInfo.latest_version,
+                  current: updateInfo.current_version,
+                })}
               </p>
               {updateInfo.changelog && (
                 <div style={{

@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useMemo } from 'react';
+import type { LanguagePreference, UiLanguage } from './i18n-core';
 
-export type UiLanguage = 'es' | 'en';
-export type LanguagePreference = 'system' | UiLanguage;
+export type { LanguagePreference, UiLanguage } from './i18n-core';
+export { resolveLanguage } from './i18n-core';
 
 type Values = Record<string, string | number>;
 
@@ -233,6 +234,12 @@ const EN_MESSAGES = {
   '¿Desactivar el inicio automático de': 'Disable automatic startup for',
   'está disponible. La versión instalada actualmente es': 'is available. The currently installed version is',
 
+  // Interpolated UI messages
+  'Se eliminarán {{count}} elementos liberando {{size}} de espacio. Esta acción es irreversible.': 'This will remove {{count}} items and free {{size}} of space. This action cannot be undone.',
+  '…y {{count}} más': '…and {{count}} more',
+  '¿Desactivar el inicio automático de {{name}}?': 'Disable automatic startup for {{name}}?',
+  'Purgio {{latest}} está disponible. La versión instalada actualmente es {{current}}.': 'Purgio {{latest}} is available. The currently installed version is {{current}}.',
+
   // Backend/common metadata
   'Papelera de Reciclaje': 'Recycle Bin',
   'Papelera de macOS': 'macOS Trash',
@@ -256,12 +263,6 @@ const EN_MESSAGES = {
 } as const;
 
 export type MessageSource = keyof typeof EN_MESSAGES;
-
-export function resolveLanguage(preference: LanguagePreference, systemLocale: string | null | undefined): UiLanguage {
-  if (preference === 'es' || preference === 'en') return preference;
-  const normalized = systemLocale?.trim().toLowerCase() ?? '';
-  return normalized === 'es' || normalized.startsWith('es-') || normalized.startsWith('es_') ? 'es' : 'en';
-}
 
 function interpolate(text: string, values?: Values): string {
   if (!values) return text;
