@@ -1,0 +1,46 @@
+name: "PR-07 dependency migration"
+
+on:
+  push:
+    branches:
+      - pr-07-i18n
+    paths:
+      - '.github/workflows/pr07-dependencies.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: "Checkout"
+        uses: actions/checkout@v7
+        with:
+          ref: pr-07-i18n
+
+      - name: "Setup Node.js"
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: "Setup Rust"
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: "Update frontend dependencies"
+        run: |
+          npm uninstall @tauri-apps/plugin-opener
+          npm install @tauri-apps/plugin-os@^2
+
+      - name: "Update Rust dependencies"
+        run: cargo add tauri-plugin-os@2 --manifest-path src-tauri/Cargo.toml
+
+      - name: "Commit dependency migration"
+        run: |
+          git rm .github/workflows/pr07-dependencies.yml
+          git config user.name "Danny Maaz"
+          git config user.email "61290346+dannymaaz@users.noreply.github.com"
+          git add package.json package-lock.json src-tauri/Cargo.toml src-tauri/Cargo.lock
+          git commit -m "Add system locale dependency and remove unused opener package"
+          git push origin HEAD:pr-07-i18n
