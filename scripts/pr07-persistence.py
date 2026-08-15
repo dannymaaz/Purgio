@@ -45,7 +45,7 @@ text = text.replace(
 )
 
 marker = '''    #[test]
-    fn rejects_future_schema_versions() {
+    fn refuses_future_schema_versions() {
 '''
 new_test = '''    #[test]
     fn migrates_v1_language_without_guessing_user_intent() {
