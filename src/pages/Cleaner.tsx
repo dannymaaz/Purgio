@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { InfoIcon, TrashIcon, RefreshIcon } from '../components/Icons';
+import { useI18n } from '../i18n';
+import { formatBytes } from '../utils/format';
 
 export interface CleanableItem {
   id: string;
@@ -32,22 +34,10 @@ export const Cleaner: React.FC<CleanerProps> = ({
   handleScan
 }) => {
   const [expandedItem, setExpandedItem] = useState<string | null>(null);
-
-  const formatBytes = (bytes: number): string => {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  };
+  const { t, backend, language } = useI18n();
 
   const toggleSelect = (id: string) => {
-    setItems(prev => prev.map(item => {
-      if (item.id === id) {
-        return { ...item, selected: !item.selected };
-      }
-      return item;
-    }));
+    setItems(prev => prev.map(item => item.id === id ? { ...item, selected: !item.selected } : item));
   };
 
   const toggleExpand = (id: string) => {
@@ -55,40 +45,28 @@ export const Cleaner: React.FC<CleanerProps> = ({
   };
 
   const selectAllSafe = () => {
-    setItems(prev => prev.map(item => {
-      if (item.risk_level === 'Safe') {
-        return { ...item, selected: true };
-      }
-      return item;
-    }));
+    setItems(prev => prev.map(item => item.risk_level === 'Safe' ? { ...item, selected: true } : item));
   };
 
   const deselectAll = () => {
     setItems(prev => prev.map(item => ({ ...item, selected: false })));
   };
 
-  // Filtrar solo items del sistema (no navegadores)
   const systemItems = items.filter(item => !item.category.startsWith('browser_'));
-
   const safeItems = systemItems.filter(item => item.risk_level === 'Safe');
   const reviewItems = systemItems.filter(item => item.risk_level === 'Review');
-
-  const selectedSize = systemItems
-    .filter(item => item.selected)
-    .reduce((sum, item) => sum + item.size, 0);
+  const selectedSize = systemItems.filter(item => item.selected).reduce((sum, item) => sum + item.size, 0);
 
   const onCleanClick = () => {
     const selected = systemItems.filter(item => item.selected);
-    if (selected.length > 0) {
-      handleClean(selected);
-    }
+    if (selected.length > 0) handleClean(selected);
   };
 
   const renderTableHead = () => (
     <div className="table-header-row">
       <div className="col-checkbox">
-        <input 
-          type="checkbox" 
+        <input
+          type="checkbox"
           className="cleaner-checkbox"
           checked={systemItems.length > 0 && systemItems.every(i => i.selected)}
           onChange={(e) => {
@@ -96,48 +74,49 @@ export const Cleaner: React.FC<CleanerProps> = ({
             setItems(prev => prev.map(i => !i.category.startsWith('browser_') ? { ...i, selected: checked } : i));
           }}
           disabled={isCleaning || scanStatus === 'scanning' || systemItems.length === 0}
-          aria-label="Seleccionar todos los elementos"
+          aria-label={t('Seleccionar todos los elementos')}
         />
       </div>
-      <div className="col-name">Componente y Ubicación</div>
-      <div className="col-risk">Nivel de Riesgo</div>
-      <div className="col-size">Tamaño</div>
+      <div className="col-name">{t('Componente y Ubicación')}</div>
+      <div className="col-risk">{t('Nivel de Riesgo')}</div>
+      <div className="col-size">{t('Tamaño')}</div>
       <div className="col-actions"></div>
     </div>
   );
 
   const renderItemRow = (item: CleanableItem) => {
     const isExpanded = expandedItem === item.id;
+    const localizedName = backend(item.name);
     return (
       <React.Fragment key={item.id}>
         <div className={`table-row ${isExpanded ? 'expanded' : ''} ${item.selected ? 'selected' : ''}`}>
           <div className="col-checkbox">
-            <input 
-              type="checkbox" 
+            <input
+              type="checkbox"
               className="cleaner-checkbox"
               checked={item.selected}
               onChange={() => toggleSelect(item.id)}
               disabled={isCleaning}
-              aria-label={`Seleccionar ${item.name}`}
+              aria-label={`${t('Seleccionar')} ${localizedName}`}
             />
           </div>
           <div className="col-name" onClick={() => toggleExpand(item.id)} style={{ cursor: 'pointer' }}>
-            <span className="cleaner-item-name">{item.name}</span>
-            <span className="cleaner-item-path" title={item.paths.join(', ')}>{item.paths.length > 0 ? item.paths[0] : 'Varias ubicaciones'}</span>
+            <span className="cleaner-item-name">{localizedName}</span>
+            <span className="cleaner-item-path" title={item.paths.join(', ')}>{item.paths.length > 0 ? item.paths[0] : t('Varias ubicaciones')}</span>
           </div>
           <div className="col-risk">
             <span className={`badge ${item.risk_level === 'Safe' ? 'badge-safe' : 'badge-review'}`}>
-              {item.risk_level === 'Safe' ? 'Seguro' : 'Revisión'}
+              {t(item.risk_level === 'Safe' ? 'Seguro' : 'Revisión')}
             </span>
           </div>
           <div className="col-size">
-            <span className="cleaner-item-size">{formatBytes(item.size)}</span>
+            <span className="cleaner-item-size">{formatBytes(item.size, language)}</span>
           </div>
           <div className="col-actions">
-            <button 
+            <button
               className={`cleaner-details-btn ${isExpanded ? 'active' : ''}`}
               onClick={() => toggleExpand(item.id)}
-              title="Ver detalles"
+              title={t('Ver detalles')}
             >
               <InfoIcon size={14} />
             </button>
@@ -148,18 +127,18 @@ export const Cleaner: React.FC<CleanerProps> = ({
           <div className="table-details-panel">
             <div className="details-content">
               <div className="details-text-group">
-                <span className="details-label">Qué es:</span>
-                <p>{item.description}</p>
+                <span className="details-label">{t('Qué es:')}</span>
+                <p>{backend(item.description)}</p>
               </div>
               <div className="details-text-group" style={{ marginTop: '8px' }}>
-                <span className="details-label">Impacto al eliminar:</span>
-                <p>{item.impact}</p>
+                <span className="details-label">{t('Impacto al eliminar:')}</span>
+                <p>{backend(item.impact)}</p>
               </div>
               <div className="details-meta-grid">
                 <div>
-                  <span className="details-label">Recomendación:</span>
+                  <span className="details-label">{t('Recomendación:')}</span>
                   <span className={`details-rec-value ${item.risk_level === 'Safe' ? 'safe' : 'warning'}`}>
-                    {item.recommended_action}
+                    {backend(item.recommended_action)}
                   </span>
                 </div>
               </div>
@@ -172,9 +151,7 @@ export const Cleaner: React.FC<CleanerProps> = ({
 
   const renderSkeletons = () => (
     <div className="table-loading-container">
-      <div className="loading-bar-wrapper">
-        <div className="loading-bar-infinite"></div>
-      </div>
+      <div className="loading-bar-wrapper"><div className="loading-bar-infinite"></div></div>
       <div className="skeleton-table">
         {[1, 2, 3, 4].map(idx => (
           <div key={idx} className="skeleton-row">
@@ -189,9 +166,7 @@ export const Cleaner: React.FC<CleanerProps> = ({
           </div>
         ))}
       </div>
-      <div className="loading-status-text">
-        Analizando archivos temporales y cachés del sistema operativo...
-      </div>
+      <div className="loading-status-text">{t('Analizando archivos temporales y cachés del sistema operativo...')}</div>
     </div>
   );
 
@@ -199,27 +174,19 @@ export const Cleaner: React.FC<CleanerProps> = ({
     <div>
       <div className="cleaner-header">
         <div>
-          <h2>Limpieza de Archivos</h2>
+          <h2>{t('Limpieza de Archivos')}</h2>
           <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginTop: '4px' }}>
-            Listado estructurado de componentes seguros y cachés de sistema analizables para liberación de espacio.
+            {t('Listado estructurado de componentes seguros y cachés de sistema analizables para liberación de espacio.')}
           </p>
         </div>
-        
+
         {scanStatus === 'done' && systemItems.length > 0 && (
           <div style={{ display: 'flex', gap: '10px' }}>
-            <button className="btn btn-secondary" onClick={deselectAll} disabled={isCleaning}>
-              Deseleccionar todo
-            </button>
-            <button className="btn btn-secondary" onClick={selectAllSafe} disabled={isCleaning}>
-              Seleccionar Seguros
-            </button>
-            <button 
-              className="btn btn-primary"
-              onClick={onCleanClick}
-              disabled={isCleaning || selectedSize === 0}
-            >
+            <button className="btn btn-secondary" onClick={deselectAll} disabled={isCleaning}>{t('Deseleccionar todo')}</button>
+            <button className="btn btn-secondary" onClick={selectAllSafe} disabled={isCleaning}>{t('Seleccionar Seguros')}</button>
+            <button className="btn btn-primary" onClick={onCleanClick} disabled={isCleaning || selectedSize === 0}>
               <TrashIcon size={16} />
-              {isCleaning ? 'Limpiando...' : `Limpiar ${formatBytes(selectedSize)}`}
+              {isCleaning ? t('Limpiando...') : `${t('Limpiar')} ${formatBytes(selectedSize, language)}`}
             </button>
           </div>
         )}
@@ -230,33 +197,31 @@ export const Cleaner: React.FC<CleanerProps> = ({
       ) : scanStatus === 'idle' ? (
         <div className="card" style={{ textAlign: 'center', padding: '54px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
           <p style={{ color: 'var(--text-muted)', fontSize: '14px', maxWidth: '460px', lineHeight: '1.5' }}>
-            Purgio necesita escanear tu sistema de archivos para detectar componentes residuales seguros que pueden ser removidos para optimizar espacio.
+            {t('Purgio necesita escanear tu sistema de archivos para detectar componentes residuales seguros que pueden ser removidos para optimizar espacio.')}
           </p>
           {handleScan && (
             <button className="btn btn-primary" onClick={handleScan}>
               <RefreshIcon size={14} />
-              Iniciar Análisis Completo
+              {t('Iniciar Análisis Completo')}
             </button>
           )}
         </div>
       ) : systemItems.length === 0 ? (
         <div className="card" style={{ textAlign: 'center', padding: '48px 0' }}>
-          <p style={{ color: 'var(--text-muted)' }}>Análisis completado. Tu sistema se encuentra libre de archivos residuales.</p>
+          <p style={{ color: 'var(--text-muted)' }}>{t('Análisis completado. Tu sistema se encuentra libre de archivos residuales.')}</p>
         </div>
       ) : (
         <div className="cockpit-table">
           {renderTableHead()}
-          
           {safeItems.length > 0 && (
             <div className="table-group-section">
-              <div className="table-group-title">Elementos Seguros para Eliminar</div>
+              <div className="table-group-title">{t('Elementos Seguros para Eliminar')}</div>
               {safeItems.map(renderItemRow)}
             </div>
           )}
-
           {reviewItems.length > 0 && (
             <div className="table-group-section" style={{ marginTop: '16px' }}>
-              <div className="table-group-title">Elementos que Requieren Revisión</div>
+              <div className="table-group-title">{t('Elementos que Requieren Revisión')}</div>
               {reviewItems.map(renderItemRow)}
             </div>
           )}

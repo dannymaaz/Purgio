@@ -1,0 +1,439 @@
+import React, { createContext, useContext, useMemo } from 'react';
+import type { UiLanguage } from './i18n-core';
+
+export type { LanguagePreference, UiLanguage } from './i18n-core';
+export { resolveLanguage } from './i18n-core';
+
+type Values = Record<string, string | number>;
+
+const EN_MESSAGES = {
+  // Common
+  'Sistema': 'System',
+  'Español': 'Spanish',
+  'English': 'English',
+  'Seguro': 'Safe',
+  'Revisión': 'Review',
+  'Sensible': 'Sensitive',
+  'Precaución': 'Caution',
+  'Cancelar': 'Cancel',
+  'Desactivar': 'Disable',
+  'Activar': 'Enable',
+  'Finalizar': 'End',
+  'Cerrar': 'Close',
+  'Minimizar': 'Minimize',
+  'Maximizar': 'Maximize',
+  'Ver detalles': 'View details',
+  'Tamaño': 'Size',
+  'Riesgo': 'Risk',
+  'Acción': 'Action',
+  'Acciones': 'Actions',
+  'Seguridad': 'Safety',
+  'Recomendación:': 'Recommendation:',
+  'Impacto al eliminar:': 'Impact when removed:',
+  'Qué es:': 'What is it:',
+  'Sin ruta especificada': 'No path specified',
+  'Desconocido': 'Unknown',
+  'Seguro de eliminar.': 'Safe to remove.',
+  'Seguro de vaciar.': 'Safe to empty.',
+  'Requiere confirmación explícita del usuario.': 'Requires explicit user confirmation.',
+
+  // Sidebar
+  'Panel Principal': 'Dashboard',
+  'Limpieza del Sistema': 'System Cleanup',
+  'Navegadores': 'Browsers',
+  'Arranque': 'Startup',
+  'Procesos': 'Processes',
+  'Configuración': 'Settings',
+  'Creado por Danny Maaz': 'Created by Danny Maaz',
+
+  // Splash/title bar
+  'Seguro • Minimalista • Ligero': 'Safe • Minimal • Lightweight',
+  'Conectando...': 'Connecting...',
+  'Crítico': 'Critical',
+  'Atención': 'Attention',
+  'Óptimo': 'Optimal',
+  'Actualización disponible': 'Update available',
+
+  // Dashboard
+  'Escaneando': 'Scanning',
+  'Escanear': 'Scan',
+  'Purgio nunca elimina datos personales o contraseñas sin tu confirmación.': 'Purgio never removes personal data or passwords without your confirmation.',
+  'Sistema Operativo': 'Operating System',
+  'Monitoreo de recursos nativos en tiempo real.': 'Real-time native resource monitoring.',
+  'Uso de Memoria RAM': 'RAM Usage',
+  'Espacio en Disco Principal': 'Main Disk Space',
+  'Espacio Recuperable': 'Recoverable Space',
+  'Haz clic en Escanear para analizar archivos temporales.': 'Click Scan to analyze temporary files.',
+  'Resumen del Análisis': 'Analysis Summary',
+  'Archivos Seguros': 'Safe Files',
+  'Requieren Revisión': 'Need Review',
+  'Apps de Arranque': 'Startup Apps',
+  'Procesos de Fondo': 'Background Processes',
+
+  // Cleaner
+  'Limpieza del Sistema Operativo': 'Operating System Cleanup',
+  'Analiza y elimina archivos innecesarios de forma segura y transparente.': 'Analyze and remove unnecessary files safely and transparently.',
+  'Deseleccionar todo': 'Deselect all',
+  'Seleccionar todo': 'Select all',
+  'Elemento': 'Item',
+  'Limpiando...': 'Cleaning...',
+  'Iniciar Análisis Completo': 'Start Full Scan',
+  'No se encontraron elementos que se puedan limpiar.': 'No cleanable items were found.',
+  'Buscando archivos temporales, cachés, logs y otros elementos seguros...': 'Looking for temporary files, caches, logs, and other safe items...',
+
+  // Browsers
+  'Limpieza de Navegadores': 'Browser Cleanup',
+  'Listado estructurado de cachés de navegadores. Los datos de sesión sensibles no están marcados por defecto.': 'Structured list of browser caches. Sensitive session data is not selected by default.',
+  'Componente de Navegador': 'Browser Component',
+  'Seleccionar todos los navegadores': 'Select all browser items',
+  'Buscando bases de datos, historiales y archivos temporales de navegadores instalados...': 'Searching databases, histories, and temporary files from installed browsers...',
+  'Purgio necesita escanear los perfiles de tus navegadores para identificar elementos que se pueden limpiar.': 'Purgio needs to scan your browser profiles to identify cleanable items.',
+  'Análisis completado o no se detectaron navegadores instalados compatibles.': 'Analysis completed or no compatible installed browsers were detected.',
+  'Eliminar este elemento cerrará tus sesiones activas o requerirá volver a introducir contraseñas.': 'Removing this item will sign you out of active sessions or require you to enter passwords again.',
+  'Navegador': 'Browser',
+
+  // Startup
+  'Aplicaciones de Arranque': 'Startup Applications',
+  'Programas que inician automáticamente al encender tu PC': 'Programs that start automatically when your PC turns on',
+  'Total:': 'Total:',
+  'Habilitadas:': 'Enabled:',
+  'Todas': 'All',
+  'Habilitadas': 'Enabled',
+  'Seguras de Desactivar': 'Safe to Disable',
+  'No se encontraron programas de arranque que coincidan con el filtro.': 'No startup programs match the current filter.',
+  'Programa y Detalles': 'Program and Details',
+  'Impacto al Inicio': 'Startup Impact',
+  'Alto Impacto': 'High Impact',
+  'Medio Impacto': 'Medium Impact',
+  'Bajo Impacto': 'Low Impact',
+  'Sin recomendación disponible.': 'No recommendation available.',
+  'Comando de ejecución:': 'Execution command:',
+  'Es seguro deshabilitar este programa para acelerar el arranque de tu equipo. Podrás abrirlo manualmente cuando lo necesites.': 'It is safe to disable this program to speed up startup. You can open it manually when needed.',
+  'Este programa puede ser crítico para el funcionamiento de hardware o servicios del sistema. Desactívalo solo si sabes qué hace.': 'This program may be critical for hardware or system services. Disable it only if you know what it does.',
+  'Falta el comando original para reactivar': 'The original command is missing and the item cannot be re-enabled',
+
+  // Background
+  'Procesos en Segundo Plano': 'Background Processes',
+  'Aplicaciones consumiendo recursos mientras no las usas.': 'Applications consuming resources while you are not using them.',
+  '* Los navegadores modernos (Chrome, Edge, Brave) usan múltiples procesos por pestaña por seguridad y estabilidad.': '* Modern browsers (Chrome, Edge, Brave) use multiple processes per tab for security and stability.',
+  'Procesos:': 'Processes:',
+  'grupos': 'groups',
+  'RAM total:': 'Total RAM:',
+  'Todos': 'All',
+  'Seguros de cerrar': 'Safe to close',
+  'Alto consumo RAM': 'High RAM usage',
+  'No se encontraron procesos que coincidan con el filtro actual.': 'No processes match the current filter.',
+  'Proceso': 'Process',
+  'Consumo RAM': 'RAM Usage',
+  'Uso CPU': 'CPU Usage',
+  'Proceso en segundo plano.': 'Background process.',
+  'Cerrando...': 'Closing...',
+
+  // Settings
+  'Ajusta el comportamiento de Purgio, personaliza el aspecto visual y gestiona las directivas de seguridad.': 'Adjust Purgio behavior, customize its appearance, and manage safety policies.',
+  'Aspecto Visual': 'Appearance',
+  'Tema de la Interfaz': 'Interface Theme',
+  'Elige entre modo claro, oscuro o sincronización automática con tu sistema.': 'Choose light, dark, or automatic synchronization with your system.',
+  'Tema del Sistema': 'System Theme',
+  'Oscuro': 'Dark',
+  'Claro': 'Light',
+  'Idioma / Language': 'Language',
+  'Idioma predeterminado de la aplicación.': 'Default application language.',
+  'Idioma del Sistema': 'System Language',
+  'Directivas de Confirmación': 'Confirmation Policies',
+  'Confirmar antes de Limpiar': 'Confirm Before Cleaning',
+  'Muestra una advertencia antes de borrar archivos seleccionados.': 'Show a warning before deleting selected files.',
+  'Confirmar Desactivación de Arranque': 'Confirm Startup Disable',
+  'Solicita confirmación antes de deshabilitar aplicaciones de inicio.': 'Ask for confirmation before disabling startup applications.',
+  'Seguridad y Privacidad': 'Safety and Privacy',
+  'Mostrar Elementos Sensibles': 'Show Sensitive Items',
+  'Permite escanear y visualizar cookies, tokens e historiales en navegadores.': 'Allow scanning and displaying cookies, tokens, and browser histories.',
+  'Ocultar Elementos Críticos': 'Hide Critical Items',
+  'Protección activa de sistema. Las carpetas clave del OS no se pueden escanear.': 'Active system protection. Critical OS folders cannot be scanned.',
+  'Activado por defecto': 'Enabled by default',
+  'Actualizaciones del Sistema': 'System Updates',
+  'Buscar Actualizaciones': 'Check for Updates',
+  'Verifica si tienes la versión más reciente instalada.': 'Check whether you have the latest version installed.',
+  'Buscar ahora': 'Check now',
+  'Desarrollado para optimización segura y transparente de sistemas operativos.': 'Built for safe and transparent operating system optimization.',
+  'Creado por Danny Maaz • Guatemala': 'Created by Danny Maaz • Guatemala',
+  'Seleccionar tema': 'Select theme',
+  'Seleccionar idioma': 'Select language',
+  'Confirmar antes de limpiar': 'Confirm before cleaning',
+  'Confirmar desactivación de arranque': 'Confirm startup disable',
+  'Mostrar elementos sensibles': 'Show sensitive items',
+
+  // App / updates / modals / toasts
+  'Nueva versión disponible:': 'New version available:',
+  'instalada:': 'installed:',
+  'Ver actualización': 'View update',
+  'Ignorar actualización': 'Dismiss update',
+  'Confirmar Eliminación': 'Confirm Deletion',
+  'Esta acción es irreversible.': 'This action is irreversible.',
+  'Limpiar definitivamente': 'Clean permanently',
+  'Desactivar del Arranque': 'Disable from Startup',
+  'El programa no se ejecutará al encender el equipo. Podrás abrirlo manualmente y volver a activarlo en cualquier momento.': 'The program will not run when the computer starts. You can open it manually and enable it again at any time.',
+  '⚠️ Este programa puede estar relacionado con drivers o seguridad del sistema. Desactivarlo con cuidado.': '⚠️ This program may be related to drivers or system security. Disable it carefully.',
+  '🔔 Nueva versión disponible': '🔔 New version available',
+  'Ahora no': 'Not now',
+  'Instalar actualización': 'Install update',
+  'Actualizando…': 'Updating…',
+  'Descargando y verificando la actualización…': 'Downloading and verifying the update…',
+  'La limpieza se completó, pero no se pudo guardar la entrada en el historial.': 'Cleanup completed, but the history entry could not be saved.',
+  'No se pudieron guardar los cambios de configuración.': 'Configuration changes could not be saved.',
+  'No se pudo cargar la configuración guardada; se mantienen valores seguros sin sobrescribir el archivo.': 'Saved configuration could not be loaded; safe values are being used without overwriting the file.',
+
+  // Coverage-complete UI phrases
+  'Versión': 'Version',
+  'Creado por': 'Created by',
+  'Limpieza de Archivos': 'File Cleanup',
+  'Segundo Plano': 'Background',
+  'disponible': 'available',
+  'Detectando...': 'Detecting...',
+  'Cargando...': 'Loading...',
+  'usados de': 'used of',
+  'Libres de': 'Free of',
+  'totales': 'total',
+  'en uso': 'used',
+  'elementos seguros listos para limpiar.': 'safe items ready to clean.',
+  'Seleccionar': 'Select',
+  'Seleccionar todos los elementos': 'Select all items',
+  'Componente y Ubicación': 'Component and Location',
+  'Nivel de Riesgo': 'Risk Level',
+  'Varias ubicaciones': 'Multiple locations',
+  'Analizando archivos temporales y cachés del sistema operativo...': 'Analyzing operating-system temporary files and caches...',
+  'Listado estructurado de componentes seguros y cachés de sistema analizables para liberación de espacio.': 'Structured list of safe components and system caches that can be analyzed to free space.',
+  'Seleccionar Seguros': 'Select Safe',
+  'Limpiar': 'Clean',
+  'Purgio necesita escanear tu sistema de archivos para detectar componentes residuales seguros que pueden ser removidos para optimizar espacio.': 'Purgio needs to scan your file system to detect safe residual components that can be removed to optimize space.',
+  'Análisis completado. Tu sistema se encuentra libre de archivos residuales.': 'Analysis complete. Your system is free of detected residual files.',
+  'Elementos Seguros para Eliminar': 'Safe Items to Remove',
+  'Elementos que Requieren Revisión': 'Items Requiring Review',
+  'más': 'more',
+  'instancias activas. Haz clic para ver detalles.': 'active instances. Click to view details.',
+  'Finalizar las': 'End all',
+  'instancias de': 'instances of',
+  'Ve a Configuración para actualizar.': 'Go to Settings to update.',
+  'No se pudo instalar la actualización:': 'The update could not be installed:',
+  'Error al analizar el sistema. Intenta de nuevo.': 'System analysis failed. Try again.',
+  '✓ Limpieza completada. Se liberaron': '✓ Cleanup completed. Freed',
+  'de espacio.': 'of space.',
+  'Error durante la limpieza:': 'Error during cleanup:',
+  'desactivado del arranque.': 'disabled from startup.',
+  'No se pudo desactivar': 'Could not disable',
+  'activado al inicio.': 'enabled at startup.',
+  'No se pudo activar': 'Could not enable',
+  'finalizado.': 'ended.',
+  'No se pudo cerrar': 'Could not close',
+  'Puede requerir permisos elevados.': 'Elevated permissions may be required.',
+  'Purgio descargará el paquete correspondiente a este sistema, verificará su firma criptográfica y solo entonces lo instalará y reiniciará la aplicación. ¿Deseas continuar?': 'Purgio will download the package for this system, verify its cryptographic signature, and only then install it and restart the application. Do you want to continue?',
+  'Se eliminarán': 'The following will be removed:',
+  'elementos': 'items',
+  'liberando': 'freeing',
+  'de espacio. Esta acción es irreversible.': 'of space. This action cannot be undone.',
+  '¿Desactivar el inicio automático de': 'Disable automatic startup for',
+  'está disponible. La versión instalada actualmente es': 'is available. The currently installed version is',
+
+  // Interpolated UI messages
+  'Se eliminarán {{count}} elementos liberando {{size}} de espacio. Esta acción es irreversible.': 'This will remove {{count}} items and free {{size}} of space. This action cannot be undone.',
+  '…y {{count}} más': '…and {{count}} more',
+  '¿Desactivar el inicio automático de {{name}}?': 'Disable automatic startup for {{name}}?',
+  'Purgio {{latest}} está disponible. La versión instalada actualmente es {{current}}.': 'Purgio {{latest}} is available. The currently installed version is {{current}}.',
+
+  // Backend metadata shown to the user
+  'Archivos Temporales de Usuario': 'User Temporary Files',
+  'Archivos Temporales del Sistema': 'System Temporary Files',
+  'Caché de Miniaturas': 'Thumbnail Cache',
+  'Reportes de Error de Windows': 'Windows Error Reports',
+  'Caché de Windows Update': 'Windows Update Cache',
+  'Archivos de Log del Sistema': 'System Log Files',
+  'Caché de Usuario': 'User Cache',
+  'Registros de Logs de Usuario': 'User Log Records',
+  'Archivos creados por aplicaciones para almacenar información temporalmente.': 'Files created by applications to store information temporarily.',
+  'El espacio se liberará de inmediato. Las aplicaciones podrían tardar una fracción de segundo más en recrear archivos temporales la próxima vez que se abran.': 'Space will be freed immediately. Applications may take slightly longer to recreate temporary files the next time they open.',
+  'Archivos temporales generados por el sistema operativo y servicios en segundo plano.': 'Temporary files generated by the operating system and background services.',
+  'Se eliminarán archivos innecesarios de instalación y logs del sistema viejo.': 'Unnecessary installation files and old system logs will be removed.',
+  'Vistas previas de imágenes y videos creadas por el explorador de archivos para mostrarlas rápido.': 'Image and video previews created by the file explorer for faster display.',
+  'El sistema tardará unos segundos en regenerar las miniaturas de tus carpetas cuando vuelvas a entrar a ellas.': 'The system will take a few seconds to regenerate folder thumbnails when you open them again.',
+  'Informes creados automáticamente tras caídas de programas para enviar a Microsoft.': 'Reports created automatically after application crashes for submission to Microsoft.',
+  'Se borrarán volcados de memoria y logs de errores antiguos. No afecta al funcionamiento de los programas.': 'Old memory dumps and error logs will be removed. This does not affect application operation.',
+  'Archivos temporales descargados por Windows Update. Se pueden eliminar tras instalar actualizaciones.': 'Temporary files downloaded by Windows Update. They can be removed after updates are installed.',
+  'Se liberará espacio. Si hay actualizaciones pendientes de instalar, se volverán a descargar.': 'Space will be freed. Pending updates will be downloaded again if needed.',
+  'Registros de actividad detallada generados por el sistema operativo Windows y sus servicios.': 'Detailed activity records generated by Windows and its services.',
+  'Se borrarán logs de diagnóstico de texto plano antiguos. No afecta al funcionamiento de los programas.': 'Old plain-text diagnostic logs will be removed. This does not affect application operation.',
+  'Archivos temporales de aplicaciones macOS para agilizar tiempos de carga.': 'Temporary macOS application files used to speed up loading.',
+  'El espacio se recuperará de inmediato. Las apps reconstruirán sus cachés según sea necesario.': 'Space will be recovered immediately. Apps will rebuild their caches as needed.',
+  'Archivos de registro de diagnósticos de software del usuario.': 'Diagnostic log files from user applications.',
+  'No afecta el sistema, solo elimina reportes de auditoría de errores antiguos.': 'This does not affect the system; it only removes old diagnostic reports.',
+  'Archivos de compilación intermedios generados por Xcode para tus proyectos de iOS/macOS.': 'Intermediate build files generated by Xcode for iOS/macOS projects.',
+  'Xcode deberá recompilar los proyectos desde cero la próxima vez. El proceso puede tardar varios minutos.': 'Xcode will need to rebuild projects from scratch next time, which may take several minutes.',
+  'Revisar antes de eliminar si tienes proyectos activos.': 'Review before removing if you have active projects.',
+  'Datos del simulador de iOS/iPadOS usados por Xcode para pruebas de apps en entorno virtual.': 'iOS/iPadOS simulator data used by Xcode to test apps in a virtual environment.',
+  'Los simuladores deberán reinstalarse. Puede requerir descargas adicionales en Xcode.': 'Simulators will need to be reinstalled and may require additional Xcode downloads.',
+  'Revisar antes de eliminar si desarrollas para iOS.': 'Review before removing if you develop for iOS.',
+  'Caché de aplicaciones locales y miniaturas en la carpeta home.': 'Local application and thumbnail cache in the home directory.',
+  'El espacio se liberará inmediatamente. Se regenerarán los archivos necesarios automáticamente.': 'Space will be freed immediately. Required files will be regenerated automatically.',
+  'Logs del sistema gestionados por systemd journal. Pueden crecer significativamente con el tiempo.': 'System logs managed by systemd journal. They can grow significantly over time.',
+  'Se eliminarán logs de journal anteriores. Puede requerir permisos de administrador.': 'Older journal logs will be removed. Administrator permissions may be required.',
+  'Seguro de eliminar (requiere sudo).': 'Safe to remove (requires sudo).',
+  'Archivos de registro del servidor gráfico Xorg.': 'Xorg display-server log files.',
+  'Se eliminarán logs de sesiones anteriores de Xorg. No afecta al sistema actual.': 'Logs from previous Xorg sessions will be removed. This does not affect the current system.',
+  'Caché de datos de aplicaciones instaladas como paquetes Snap.': 'Cached data from applications installed as Snap packages.',
+  'Los paquetes Snap regenerarán su caché según sea necesario.': 'Snap packages will rebuild their cache as needed.',
+  'Caché de datos de aplicaciones instaladas como paquetes Flatpak.': 'Cached data from applications installed as Flatpak packages.',
+  'Los paquetes Flatpak regenerarán su caché según sea necesario.': 'Flatpak packages will rebuild their cache as needed.',
+  'Paquetes de Node.js cacheados globalmente por Yarn para acelerar instalaciones.': 'Node.js packages cached globally by Yarn to speed up installations.',
+  "Yarn descargará los paquetes de internet la próxima vez que ejecutes 'yarn install'.": "Yarn will download packages from the internet the next time you run 'yarn install'.",
+  'Contiene archivos que has eliminado pero que aún permanecen en el disco por si deseas restaurarlos.': 'Contains files you deleted that remain on disk in case you want to restore them.',
+  'Los archivos eliminados se borrarán de forma definitiva y no se podrán recuperar con facilidad.': 'Deleted files will be removed permanently and will not be easily recoverable.',
+  'Seguro de eliminar permanentemente.': 'Safe to remove permanently.',
+  'Se vaciará la papelera de escritorio del usuario de forma irreversible.': 'The user desktop trash will be emptied irreversibly.',
+  'Contiene archivos descargados de Internet, instaladores (.exe, .dmg, .pkg, .deb), PDFs, etc.': 'Contains files downloaded from the internet, installers (.exe, .dmg, .pkg, .deb), PDFs, and more.',
+  'Se eliminarán todos los archivos guardados en la carpeta Descargas. Podrías perder información que no hayas respaldado en otras carpetas.': 'All files stored in Downloads will be removed. You could lose information that has not been backed up elsewhere.',
+  'Descargas cacheadas de paquetes e información de dependencias por Node Package Manager (npm).': 'Cached package downloads and dependency metadata from Node Package Manager (npm).',
+  "NPM descargará los paquetes directamente de internet la próxima vez que ejecutes 'npm install'.": "NPM will download packages directly from the internet the next time you run 'npm install'.",
+  'Descargas locales cacheadas de librerías e instaladores de Python por pip.': 'Locally cached Python libraries and installers downloaded by pip.',
+  'Pip descargará los paquetes desde PyPI si no los encuentra localmente al instalar dependencias.': 'Pip will download packages from PyPI when they are not available locally during dependency installation.',
+  'Paquetes de librerías .NET compilados y cacheados localmente en tu perfil de usuario.': '.NET library packages compiled and cached locally in your user profile.',
+  'Los proyectos volverán a descargar los paquetes NuGet necesarios cuando compiles la solución.': 'Projects will download required NuGet packages again when the solution is built.',
+  'Las páginas web que visitas con frecuencia podrían tardar un poco más en cargar la primera vez, pero se optimiza el espacio.': 'Frequently visited pages may take slightly longer to load the first time, while disk usage is reduced.',
+  'Se borrará el historial de navegación. No podrás usar la función de autocompletado de URLs basada en tu historial.': 'Browsing history will be removed. History-based URL autocomplete will no longer have those entries.',
+  'Requiere confirmación. Borra tu rastro de navegación.': 'Requires confirmation. Removes your browsing trail.',
+  'Se eliminarán solo los archivos de descarga incompletos. Las descargas completadas no se verán afectadas.': 'Only incomplete download artifacts will be removed. Completed downloads are not affected.',
+  'Eliminar este elemento cerrará tus sesiones activas en páginas web (correo, redes sociales) y requerirá que vuelvas a introducir tus contraseñas.': 'Removing this item will sign you out of active websites (email, social networks) and require you to enter passwords again.',
+  'ADVERTENCIA: Cerrará tus sesiones activas.': 'WARNING: This will sign you out of active sessions.',
+  'Proceso auxiliar de Spotify.': 'Spotify helper process.',
+  'Cliente de Discord.': 'Discord client.',
+  'Cliente de Steam.': 'Steam client.',
+  'Servicios de Adobe Creative Cloud.': 'Adobe Creative Cloud services.',
+  'Sincronización de Microsoft OneDrive.': 'Microsoft OneDrive synchronization.',
+  'Sincronización de Dropbox.': 'Dropbox synchronization.',
+  'Proceso auxiliar de Spotify para la interfaz y reproducción.': 'Spotify helper process for interface and playback.',
+  'Spotify se cerrará por completo.': 'Spotify will close completely.',
+  'Cliente de chat de Discord en segundo plano.': 'Discord chat client running in the background.',
+  'Se cerrará Discord y no recibirás notificaciones hasta reabrirlo.': 'Discord will close and notifications will stop until you reopen it.',
+  'Cliente de Steam para la descarga e inicio de juegos.': 'Steam client for downloading and launching games.',
+  'Se detendrán las descargas de juegos en segundo plano.': 'Background game downloads will stop.',
+  'Proceso o pestaña del navegador Google Chrome.': 'Google Chrome browser process or tab.',
+  'Si cierras este proceso, se podría cerrar una pestaña activa.': 'Closing this process may close an active tab.',
+  'Proceso en segundo plano del navegador Microsoft Edge.': 'Microsoft Edge background browser process.',
+  'Se cerrará el proceso auxiliar de Edge.': 'The Edge helper process will close.',
+  'Proceso en segundo plano de Brave Browser.': 'Brave Browser background process.',
+  'Se detendrá el motor del navegador Brave.': 'The Brave browser engine will stop.',
+  'Servicios de Epic Games Store en segundo plano.': 'Epic Games Store services running in the background.',
+  'Epic Games Launcher se cerrará.': 'Epic Games Launcher will close.',
+  'Cliente de comunicación de equipos Slack.': 'Slack team communication client.',
+  'Se detendrán las notificaciones de Slack.': 'Slack notifications will stop.',
+  'Cliente de videollamadas y chat de Microsoft Teams.': 'Microsoft Teams video-call and chat client.',
+  'Se cerrará Teams reduciendo consumo de RAM.': 'Teams will close, reducing RAM usage.',
+  'Proceso de soporte de la app de videollamadas Zoom.': 'Support process for the Zoom video-call app.',
+  'Se detendrá el servicio latente de Zoom.': 'The background Zoom service will stop.',
+  'Asistente de sincronización de Microsoft OneDrive.': 'Microsoft OneDrive synchronization helper.',
+  'Se pausará la sincronización en la nube.': 'Cloud synchronization will pause.',
+  'Cliente de sincronización de Dropbox.': 'Dropbox synchronization client.',
+  'Se pausará la sincronización local de archivos.': 'Local file synchronization will pause.',
+  'Proceso de NVIDIA. Consume RAM pero es para el GPU.': 'NVIDIA process. It uses RAM to support the GPU.',
+  'Puede afectar rendimiento gráfico.': 'This may affect graphics performance.',
+  'Proceso de AMD relacionado con el GPU.': 'AMD process related to the GPU.',
+  'Puede afectar el rendimiento gráfico.': 'This may affect graphics performance.',
+  'Cliente de mensajería Telegram.': 'Telegram messaging client.',
+  'No recibirás notificaciones de Telegram.': 'You will not receive Telegram notifications.',
+  'No recibirás mensajes hasta reabrirlo.': 'You will not receive messages until you reopen it.',
+  'Proceso o pestaña del navegador Firefox.': 'Firefox browser process or tab.',
+  'Podría cerrar una pestaña activa.': 'This may close an active tab.',
+  'Proceso del navegador Opera.': 'Opera browser process.',
+  'Se cerrará Opera.': 'Opera will close.',
+  'El programa correspondiente se cerrará y podría perder datos no guardados.': 'The corresponding application will close and unsaved data may be lost.',
+  'NO CERRAR: El cierre de este proceso puede causar inestabilidad en el sistema operativo o pantalla azul.': 'DO NOT CLOSE: Ending this process can cause operating-system instability or a blue screen.',
+
+  // Backend/common metadata
+  'Papelera de Reciclaje': 'Recycle Bin',
+  'Papelera de macOS': 'macOS Trash',
+  'Papelera de Linux': 'Linux Trash',
+  'Carpeta de Descargas': 'Downloads Folder',
+  'Caché de NPM (Node.js)': 'NPM Cache (Node.js)',
+  'Caché de Pip (Python)': 'Pip Cache (Python)',
+  'Caché de NuGet (.NET)': 'NuGet Cache (.NET)',
+  'Caché de Usuario Linux': 'Linux User Cache',
+  'Journal de systemd': 'systemd Journal',
+  'Logs de Xorg': 'Xorg Logs',
+  'Caché de Paquetes Snap': 'Snap Package Cache',
+  'Caché de Paquetes Flatpak': 'Flatpak Package Cache',
+  'Caché de Yarn': 'Yarn Cache',
+  'Caché del Simulador de iOS': 'iOS Simulator Cache',
+  'Archivos borrados temporalmente.': 'Temporarily deleted files.',
+  'Se borrarán permanentemente del sistema.': 'They will be permanently deleted from the system.',
+  'Aplicación no reconocida.': 'Unrecognized application.',
+  'Proceso de aplicación de usuario.': 'User application process.',
+  'Proceso del sistema operativo esencial.': 'Essential operating system process.',
+} as const;
+
+export type MessageSource = keyof typeof EN_MESSAGES;
+
+function interpolate(text: string, values?: Values): string {
+  if (!values) return text;
+  return Object.entries(values).reduce(
+    (result, [key, value]) => result.split(`{{${key}}}`).join(String(value)),
+    text,
+  );
+}
+
+export function translate(language: UiLanguage, source: string, values?: Values): string {
+  if (language === 'es') return interpolate(source, values);
+  const translated = EN_MESSAGES[source as MessageSource] ?? source;
+  return interpolate(translated, values);
+}
+
+export function translateBackendText(language: UiLanguage, source: string): string {
+  if (language === 'es' || !source) return source;
+
+  const exact = EN_MESSAGES[source as MessageSource];
+  if (exact) return exact;
+
+  const dynamicRules: Array<[RegExp, (match: RegExpMatchArray) => string]> = [
+    [/^Caché de (.+)$/, (m) => `${m[1]} Cache`],
+    [/^Archivos temporales e imágenes cacheadas de páginas web en (.+)\.$/, (m) => `Temporary files and cached web-page images in ${m[1]}.`],
+    [/^Historial de navegación de (.+)$/, (m) => `${m[1]} Browsing History`],
+    [/^Listado de sitios web visitados en (.+) recientemente\.$/, (m) => `List of websites recently visited in ${m[1]}.`],
+    [/^Descargas Incompletas de (.+)$/, (m) => `${m[1]} Incomplete Downloads`],
+    [/^Archivos de descarga que se interrumpieron en (.+) \(Mega, YouTube, etc\.\)\. Estos archivos ocupan espacio sin utilidad\.$/, (m) => `Downloads interrupted in ${m[1]} (Mega, YouTube, etc.). These files use space without being useful.`],
+    [/^Sesiones y Cookies de (.+)$/, (m) => `${m[1]} Sessions and Cookies`],
+    [/^Cookies, sesiones de usuario abiertas, contraseñas cifradas y tokens de autenticación en (.+)\.$/, (m) => `Cookies, open user sessions, encrypted passwords, and authentication tokens in ${m[1]}.`],
+    [/^Cookies y sesiones de (.+)$/, (m) => `${m[1]} Cookies and Sessions`],
+    [/^Datos de formularios de (.+)$/, (m) => `${m[1]} Form Data`],
+    [/^Caché de (.+) \((.+)\)$/, (m) => `${m[1]} Cache (${m[2]})`],
+    [/^Registro \((.+)\)$/, (m) => `Registry (${m[1]})`],
+    [/^Usuario \(Desactivado\)$/, () => 'User (Disabled)'],
+  ];
+
+  for (const [pattern, format] of dynamicRules) {
+    const match = source.match(pattern);
+    if (match) return format(match);
+  }
+
+  return source;
+}
+
+interface I18nValue {
+  language: UiLanguage;
+  t: (source: string, values?: Values) => string;
+  backend: (source: string) => string;
+}
+
+const I18nContext = createContext<I18nValue | null>(null);
+
+export const I18nProvider: React.FC<React.PropsWithChildren<{ language: UiLanguage }>> = ({ language, children }) => {
+  const value = useMemo<I18nValue>(() => ({
+    language,
+    t: (source, values) => translate(language, source, values),
+    backend: (source) => translateBackendText(language, source),
+  }), [language]);
+
+  return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
+};
+
+export function useI18n(): I18nValue {
+  const value = useContext(I18nContext);
+  if (!value) throw new Error('useI18n must be used inside I18nProvider');
+  return value;
+}

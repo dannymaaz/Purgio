@@ -6,7 +6,7 @@ use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::Manager;
 
-const CURRENT_SCHEMA_VERSION: u32 = 1;
+const CURRENT_SCHEMA_VERSION: u32 = 2;
 const STATE_FILE_NAME: &str = "state.json";
 const MAX_HISTORY_ENTRIES: usize = 50;
 
@@ -29,7 +29,7 @@ impl Default for AppPreferences {
     fn default() -> Self {
         Self {
             theme: "system".to_string(),
-            language: "es".to_string(),
+            language: "system".to_string(),
             confirm_delete: true,
             confirm_disable: true,
             show_sensitive: false,
@@ -84,7 +84,7 @@ fn validate_preferences(preferences: &AppPreferences) -> Result<(), String> {
         return Err(format!("Tema no válido: {}", preferences.theme));
     }
 
-    if !matches!(preferences.language.as_str(), "es" | "en") {
+    if !matches!(preferences.language.as_str(), "system" | "es" | "en") {
         return Err(format!("Idioma no válido: {}", preferences.language));
     }
 
@@ -105,10 +105,17 @@ fn migrate_schema(mut state: PersistedState) -> Result<PersistedState, String> {
         ));
     }
 
-    // Primer schema persistente de Purgio. Mantener este bloque explícito para
-    // que futuras versiones añadan migraciones secuenciales en vez de reinterpretar JSON.
+    // Primer schema persistente de Purgio. Mantener migraciones secuenciales
+    // evita reinterpretar silenciosamente archivos creados por versiones anteriores.
     if state.schema_version == 0 {
         state.schema_version = 1;
+    }
+
+    // Schema v2 añade `system` como preferencia de idioma. Un estado v1 solo
+    // podía contener `es` o `en`; se conserva ese valor porque v1 no registraba
+    // si provenía del default o de un override explícito del usuario.
+    if state.schema_version == 1 {
+        state.schema_version = 2;
     }
 
     validate_preferences(&state.preferences)?;
@@ -331,7 +338,7 @@ mod tests {
         let state = PersistedState::default();
         assert_eq!(state.schema_version, CURRENT_SCHEMA_VERSION);
         assert_eq!(state.preferences.theme, "system");
-        assert_eq!(state.preferences.language, "es");
+        assert_eq!(state.preferences.language, "system");
         assert!(state.preferences.confirm_delete);
         assert!(state.preferences.confirm_disable);
         assert!(!state.preferences.show_sensitive);
@@ -370,6 +377,33 @@ mod tests {
         assert_eq!(sanitized.len(), MAX_HISTORY_ENTRIES);
         assert!(sanitized.iter().all(|entry| entry.timestamp > 0));
         assert!(sanitized.iter().all(|entry| entry.item_count > 0));
+    }
+
+    #[test]
+    fn migrates_v1_language_without_guessing_user_intent() {
+        let state = PersistedState {
+            schema_version: 1,
+            preferences: AppPreferences {
+                language: "es".to_string(),
+                ..AppPreferences::default()
+            },
+            ..PersistedState::default()
+        };
+        let migrated = migrate_schema(state).expect("v1 should migrate");
+        assert_eq!(migrated.schema_version, 2);
+        assert_eq!(migrated.preferences.language, "es");
+
+        let state = PersistedState {
+            schema_version: 1,
+            preferences: AppPreferences {
+                language: "en".to_string(),
+                ..AppPreferences::default()
+            },
+            ..PersistedState::default()
+        };
+        let migrated = migrate_schema(state).expect("v1 should migrate");
+        assert_eq!(migrated.schema_version, 2);
+        assert_eq!(migrated.preferences.language, "en");
     }
 
     #[test]
