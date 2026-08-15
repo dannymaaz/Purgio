@@ -2,14 +2,15 @@ import React, { useEffect, useState } from 'react';
 import { getVersion } from '@tauri-apps/api/app';
 import purgioLogo from '../assets/logo/purgio-logo.svg';
 import purgioLogoLight from '../assets/logo/purgio-logo-light.svg';
-import { 
-  DashboardIcon, 
-  CleanerIcon, 
-  BrowsersIcon, 
-  StartupIcon, 
-  BackgroundIcon, 
-  SettingsIcon 
+import {
+  DashboardIcon,
+  CleanerIcon,
+  BrowsersIcon,
+  StartupIcon,
+  BackgroundIcon,
+  SettingsIcon
 } from './Icons';
+import { useI18n } from '../i18n';
 
 interface SideBarProps {
   currentTab: string;
@@ -19,6 +20,7 @@ interface SideBarProps {
 
 export const SideBar: React.FC<SideBarProps> = ({ currentTab, setCurrentTab, theme }) => {
   const [appVersion, setAppVersion] = useState<string>('...');
+  const { t } = useI18n();
 
   useEffect(() => {
     getVersion().then(setAppVersion).catch(() => setAppVersion('2.0.1'));
@@ -37,10 +39,10 @@ export const SideBar: React.FC<SideBarProps> = ({ currentTab, setCurrentTab, the
     <aside className="sidebar">
       <div className="sidebar-menu-wrapper">
         <div className="sidebar-header">
-          <img 
-            src={theme === 'dark' ? purgioLogo : purgioLogoLight} 
-            alt="Purgio Logo" 
-            className="sidebar-logo" 
+          <img
+            src={theme === 'dark' ? purgioLogo : purgioLogoLight}
+            alt="Purgio Logo"
+            className="sidebar-logo"
           />
         </div>
         <nav className="sidebar-menu">
@@ -51,16 +53,15 @@ export const SideBar: React.FC<SideBarProps> = ({ currentTab, setCurrentTab, the
               onClick={() => setCurrentTab(item.id)}
             >
               {item.icon}
-              {item.name}
+              {t(item.name)}
             </button>
           ))}
         </nav>
       </div>
       <div className="sidebar-footer">
-        {/* Versión leída dinámicamente desde Tauri — se actualiza automáticamente con cada build */}
-        <span>Versión v{appVersion}</span>
+        <span>{t('Versión')} v{appVersion}</span>
         <span>
-          Creado por <span className="sidebar-footer-author">Danny Maaz</span>
+          {t('Creado por')} <span className="sidebar-footer-author">Danny Maaz</span>
         </span>
         <span>Guatemala</span>
       </div>
