@@ -93,5 +93,41 @@ jobs:
       - name: "Install dependencies"
         run: npm ci
 
+      - name: "Verify NSIS branding assets"
+        shell: pwsh
+        run: |
+          $assets = @{
+            "src-tauri/windows/nsis/header.bmp" = @(150, 57)
+            "src-tauri/windows/nsis/sidebar.bmp" = @(164, 314)
+          }
+          foreach ($entry in $assets.GetEnumerator()) {
+            if (-not (Test-Path $entry.Key)) {
+              throw "Missing NSIS branding asset: $($entry.Key)"
+            }
+            $bytes = [System.IO.File]::ReadAllBytes($entry.Key)
+            if ($bytes.Length -lt 26 -or $bytes[0] -ne 0x42 -or $bytes[1] -ne 0x4D) {
+              throw "Invalid BMP asset: $($entry.Key)"
+            }
+            $width = [BitConverter]::ToInt32($bytes, 18)
+            $height = [BitConverter]::ToInt32($bytes, 22)
+            if ($width -ne $entry.Value[0] -or $height -ne $entry.Value[1]) {
+              throw "Unexpected dimensions for $($entry.Key): ${width}x${height}"
+            }
+          }
+
       - name: "Build NSIS installer"
         run: npm run tauri -- build --bundles nsis
+
+      - name: "Verify NSIS installer output"
+        shell: pwsh
+        run: |
+          $installers = @(Get-ChildItem "src-tauri/target/release/bundle/nsis/*-setup.exe" -ErrorAction SilentlyContinue)
+          if ($installers.Count -eq 0) {
+            throw "NSIS build completed without producing a *-setup.exe installer."
+          }
+          foreach ($installer in $installers) {
+            if ($installer.Length -lt 1MB) {
+              throw "Installer output is unexpectedly small: $($installer.FullName)"
+            }
+            Write-Host "Verified installer: $($installer.Name) ($([math]::Round($installer.Length / 1MB, 2)) MB)"
+          }
