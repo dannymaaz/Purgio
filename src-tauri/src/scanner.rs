@@ -1,8 +1,8 @@
-use serde::{Serialize, Deserialize};
+use crate::safety::{self, RiskLevel};
+use serde::{Deserialize, Serialize};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
-use crate::safety::{self, RiskLevel};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CleanableItem {
@@ -18,7 +18,7 @@ pub struct CleanableItem {
     pub category: String,
 }
 
-// ImplementaciÃ³n auxiliar para convertir tipos de String mÃ¡s limpios
+// Implementación auxiliar para convertir tipos de String más limpios
 impl CleanableItem {
     pub fn new(
         id: &str,
@@ -46,16 +46,16 @@ impl CleanableItem {
     }
 }
 
-/// Helper para calcular el tamaÃ±o de un directorio de forma segura e incremental (evitando bucles infinitos y recursiÃ³n profunda)
+/// Helper para calcular el tamaño de un directorio de forma segura e incremental (evitando bucles infinitos y recursión profunda)
 pub fn get_dir_size<P: AsRef<Path>>(path: P) -> u64 {
     let mut total_size = 0;
     let max_depth = 5; // Limitar profundidad para evitar bloqueos
-    
+
     fn dir_size_recursive(path: &Path, current_depth: usize, max_depth: usize) -> u64 {
         if current_depth > max_depth {
             return 0;
         }
-        
+
         let mut size = 0;
         if let Ok(entries) = fs::read_dir(path) {
             for entry in entries.flatten() {
@@ -63,7 +63,7 @@ pub fn get_dir_size<P: AsRef<Path>>(path: P) -> u64 {
                     if metadata.is_file() {
                         size += metadata.len();
                     } else if metadata.is_dir() {
-                        // Evitar seguir enlaces simbÃ³licos para no entrar en bucles
+                        // Evitar seguir enlaces simbólicos para no entrar en bucles
                         if !metadata.file_type().is_symlink() {
                             size += dir_size_recursive(&entry.path(), current_depth + 1, max_depth);
                         }
@@ -81,26 +81,41 @@ pub fn get_dir_size<P: AsRef<Path>>(path: P) -> u64 {
             total_size = metadata.len();
         }
     }
-    
+
     total_size
 }
 
-/// Obtiene los directorios de usuario de navegadores segÃºn la plataforma
+/// Obtiene los directorios de usuario de navegadores según la plataforma
 fn get_browser_paths() -> Vec<(String, PathBuf)> {
     let mut paths = Vec::new();
-    
+
     #[cfg(target_os = "windows")]
     {
         if let Ok(app_data) = env::var("LOCALAPPDATA") {
             let app_data_path = PathBuf::from(app_data);
-            paths.push(("Chrome".to_string(), app_data_path.join("Google\\Chrome\\User Data")));
-            paths.push(("Edge".to_string(), app_data_path.join("Microsoft\\Edge\\User Data")));
-            paths.push(("Brave".to_string(), app_data_path.join("BraveSoftware\\Brave-Browser\\User Data")));
-            paths.push(("Opera".to_string(), app_data_path.join("Opera Software\\Opera Stable")));
+            paths.push((
+                "Chrome".to_string(),
+                app_data_path.join("Google\\Chrome\\User Data"),
+            ));
+            paths.push((
+                "Edge".to_string(),
+                app_data_path.join("Microsoft\\Edge\\User Data"),
+            ));
+            paths.push((
+                "Brave".to_string(),
+                app_data_path.join("BraveSoftware\\Brave-Browser\\User Data"),
+            ));
+            paths.push((
+                "Opera".to_string(),
+                app_data_path.join("Opera Software\\Opera Stable"),
+            ));
         }
         if let Ok(app_data_roaming) = env::var("APPDATA") {
             let app_data_path = PathBuf::from(app_data_roaming);
-            paths.push(("Firefox".to_string(), app_data_path.join("Mozilla\\Firefox\\Profiles")));
+            paths.push((
+                "Firefox".to_string(),
+                app_data_path.join("Mozilla\\Firefox\\Profiles"),
+            ));
         }
     }
 
@@ -109,12 +124,30 @@ fn get_browser_paths() -> Vec<(String, PathBuf)> {
         if let Ok(home) = env::var("HOME") {
             let home_path = PathBuf::from(home);
             let app_support = home_path.join("Library/Application Support");
-            paths.push(("Chrome".to_string(), app_support.join("Google/Chrome")));
-            paths.push(("Edge".to_string(), app_support.join("Microsoft Edge")));
-            paths.push(("Brave".to_string(), app_support.join("BraveSoftware/Brave-Browser")));
-            paths.push(("Opera".to_string(), app_support.join("com.operasoftware.Opera")));
-            paths.push(("Firefox".to_string(), home_path.join("Library/Application Support/Firefox/Profiles")));
-            paths.push(("Safari".to_string(), home_path.join("Library/Safari")));
+            paths.push((
+                "Chrome".to_string(),
+                app_support.join("Google/Chrome"),
+            ));
+            paths.push((
+                "Edge".to_string(),
+                app_support.join("Microsoft Edge"),
+            ));
+            paths.push((
+                "Brave".to_string(),
+                app_support.join("BraveSoftware/Brave-Browser"),
+            ));
+            paths.push((
+                "Opera".to_string(),
+                app_support.join("com.operasoftware.Opera"),
+            ));
+            paths.push((
+                "Firefox".to_string(),
+                home_path.join("Library/Application Support/Firefox/Profiles"),
+            ));
+            paths.push((
+                "Safari".to_string(),
+                home_path.join("Library/Safari"),
+            ));
         }
     }
 
@@ -123,10 +156,19 @@ fn get_browser_paths() -> Vec<(String, PathBuf)> {
         if let Ok(home) = env::var("HOME") {
             let home_path = PathBuf::from(home);
             let config = home_path.join(".config");
-            paths.push(("Chrome".to_string(), config.join("google-chrome")));
-            paths.push(("Brave".to_string(), config.join("BraveSoftware/Brave-Browser")));
+            paths.push((
+                "Chrome".to_string(),
+                config.join("google-chrome"),
+            ));
+            paths.push((
+                "Brave".to_string(),
+                config.join("BraveSoftware/Brave-Browser"),
+            ));
             paths.push(("Opera".to_string(), config.join("opera")));
-            paths.push(("Firefox".to_string(), home_path.join(".mozilla/firefox")));
+            paths.push((
+                "Firefox".to_string(),
+                home_path.join(".mozilla/firefox"),
+            ));
             paths.push(("Chromium".to_string(), config.join("chromium")));
         }
     }
@@ -134,7 +176,7 @@ fn get_browser_paths() -> Vec<(String, PathBuf)> {
     paths
 }
 
-/// Escanea los archivos seguros y de revisiÃ³n del sistema operativo
+/// Escanea los archivos seguros y de revisión del sistema operativo
 pub fn scan_system_files() -> Vec<CleanableItem> {
     let mut items = Vec::new();
 
@@ -151,14 +193,14 @@ pub fn scan_system_files() -> Vec<CleanableItem> {
                     size,
                     vec![temp.to_string()],
                     RiskLevel::Safe,
-                    "Archivos creados por aplicaciones para almacenar informaciÃ³n temporalmente.",
-                    "El espacio se liberarÃ¡ de inmediato. Las aplicaciones podrÃ­an tardar una fracciÃ³n de segundo mÃ¡s en recrear archivos temporales la prÃ³xima vez que se abran.",
+                    "Archivos creados por aplicaciones para almacenar información temporalmente.",
+                    "El espacio se liberará de inmediato. Las aplicaciones podrían tardar una fracción de segundo más en recrear archivos temporales la próxima vez que se abran.",
                     "Seguro de eliminar.",
-                    "temp"
+                    "temp",
                 ));
             }
         }
-        
+
         let system_temp = "C:\\Windows\\Temp";
         let system_temp_path = PathBuf::from(system_temp);
         if system_temp_path.exists() && !safety::is_path_critical(system_temp) {
@@ -170,13 +212,13 @@ pub fn scan_system_files() -> Vec<CleanableItem> {
                 vec![system_temp.to_string()],
                 RiskLevel::Safe,
                 "Archivos temporales generados por el sistema operativo y servicios en segundo plano.",
-                "Se eliminarÃ¡n archivos innecesarios de instalaciÃ³n y logs del sistema viejo.",
+                "Se eliminarán archivos innecesarios de instalación y logs del sistema viejo.",
                 "Seguro de eliminar.",
-                "temp"
+                "temp",
             ));
         }
 
-        // CachÃ© de miniaturas
+        // Caché de miniaturas
         if let Ok(local_appdata) = env::var("LOCALAPPDATA") {
             let explorer_cache = PathBuf::from(&local_appdata).join("Microsoft\\Windows\\Explorer");
             if explorer_cache.exists() {
@@ -194,14 +236,14 @@ pub fn scan_system_files() -> Vec<CleanableItem> {
                 }
                 items.push(CleanableItem::new(
                     "win_thumb_cache",
-                    "CachÃ© de Miniaturas",
+                    "Caché de Miniaturas",
                     size,
                     vec![explorer_cache.to_str().unwrap_or("").to_string()],
                     RiskLevel::Safe,
-                    "Vistas previas de imÃ¡genes y videos creadas por el explorador de archivos para mostrarlas rÃ¡pido.",
-                    "El sistema tardarÃ¡ unos segundos en regenerar las miniaturas de tus carpetas cuando vuelvas a entrar a ellas.",
+                    "Vistas previas de imágenes y videos creadas por el explorador de archivos para mostrarlas rápido.",
+                    "El sistema tardará unos segundos en regenerar las miniaturas de tus carpetas cuando vuelvas a entrar a ellas.",
                     "Seguro de eliminar.",
-                    "cache"
+                    "cache",
                 ));
             }
         }
@@ -217,10 +259,10 @@ pub fn scan_system_files() -> Vec<CleanableItem> {
                     size,
                     vec![wer_path.to_str().unwrap_or("").to_string()],
                     RiskLevel::Safe,
-                    "Informes creados automÃ¡ticamente tras caÃ­das de programas para enviar a Microsoft.",
-                    "Se borrarÃ¡n volcados de memoria y logs de errores antiguos. No afecta al funcionamiento de los programas.",
+                    "Informes creados automáticamente tras caídas de programas para enviar a Microsoft.",
+                    "Se borrarán volcados de memoria y logs de errores antiguos. No afecta al funcionamiento de los programas.",
                     "Seguro de eliminar.",
-                    "cache"
+                    "cache",
                 ));
             }
         }
@@ -232,14 +274,14 @@ pub fn scan_system_files() -> Vec<CleanableItem> {
             let size = get_dir_size(&win_update_path);
             items.push(CleanableItem::new(
                 "win_update_cache",
-                "CachÃ© de Windows Update",
+                "Caché de Windows Update",
                 size,
                 vec![win_update_cache.to_string()],
                 RiskLevel::Safe,
                 "Archivos temporales descargados por Windows Update. Se pueden eliminar tras instalar actualizaciones.",
-                "Se liberarÃ¡ espacio. Si hay actualizaciones pendientes de instalar, se volverÃ¡n a descargar.",
+                "Se liberará espacio. Si hay actualizaciones pendientes de instalar, se volverán a descargar.",
                 "Seguro de eliminar.",
-                "temp"
+                "temp",
             ));
         }
 
@@ -255,9 +297,9 @@ pub fn scan_system_files() -> Vec<CleanableItem> {
                 vec![win_logs.to_string()],
                 RiskLevel::Safe,
                 "Registros de actividad detallada generados por el sistema operativo Windows y sus servicios.",
-                "Se borrarÃ¡n logs de diagnÃ³stico de texto plano antiguos. No afecta al funcionamiento de los programas.",
+                "Se borrarán logs de diagnóstico de texto plano antiguos. No afecta al funcionamiento de los programas.",
                 "Seguro de eliminar.",
-                "cache"
+                "cache",
             ));
         }
     }
@@ -271,14 +313,14 @@ pub fn scan_system_files() -> Vec<CleanableItem> {
                 let size = get_dir_size(&caches);
                 items.push(CleanableItem::new(
                     "mac_user_caches",
-                    "CachÃ© de Usuario",
+                    "Caché de Usuario",
                     size,
                     vec![caches.to_str().unwrap_or("").to_string()],
                     RiskLevel::Safe,
                     "Archivos temporales de aplicaciones macOS para agilizar tiempos de carga.",
-                    "El espacio se recuperarÃ¡ de inmediato. Las apps reconstruirÃ¡n sus cachÃ©s segÃºn sea necesario.",
+                    "El espacio se recuperará de inmediato. Las apps reconstruirán sus cachés según sea necesario.",
                     "Seguro de eliminar.",
-                    "cache"
+                    "cache",
                 ));
             }
 
@@ -291,14 +333,14 @@ pub fn scan_system_files() -> Vec<CleanableItem> {
                     size,
                     vec![logs.to_str().unwrap_or("").to_string()],
                     RiskLevel::Safe,
-                    "Archivos de registro de diagnÃ³sticos de software del usuario.",
-                    "No afecta el sistema, solo elimina reportes de auditorÃ­a de errores antiguos.",
+                    "Archivos de registro de diagnósticos de software del usuario.",
+                    "No afecta el sistema, solo elimina reportes de auditoría de errores antiguos.",
                     "Seguro de eliminar.",
-                    "cache"
+                    "cache",
                 ));
             }
 
-            // â”€â”€ Xcode Derived Data â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            // ── Xcode Derived Data ───────────────────────────────────────────
             let xcode_derived = home_path.join("Library/Developer/Xcode/DerivedData");
             if xcode_derived.exists() {
                 let size = get_dir_size(&xcode_derived);
@@ -308,27 +350,27 @@ pub fn scan_system_files() -> Vec<CleanableItem> {
                     size,
                     vec![xcode_derived.to_str().unwrap_or("").to_string()],
                     RiskLevel::Review,
-                    "Archivos de compilaciÃ³n intermedios generados por Xcode para tus proyectos de iOS/macOS.",
-                    "Xcode deberÃ¡ recompilar los proyectos desde cero la prÃ³xima vez. El proceso puede tardar varios minutos.",
+                    "Archivos de compilación intermedios generados por Xcode para tus proyectos de iOS/macOS.",
+                    "Xcode deberá recompilar los proyectos desde cero la próxima vez. El proceso puede tardar varios minutos.",
                     "Revisar antes de eliminar si tienes proyectos activos.",
-                    "cache"
+                    "cache",
                 ));
             }
 
-            // â”€â”€ iOS Simulator Cache â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            // ── iOS Simulator Cache ─────────────────────────────────────────
             let ios_sim = home_path.join("Library/Developer/CoreSimulator");
             if ios_sim.exists() {
                 let size = get_dir_size(&ios_sim);
                 items.push(CleanableItem::new(
                     "mac_ios_simulator",
-                    "CachÃ© del Simulador de iOS",
+                    "Caché del Simulador de iOS",
                     size,
                     vec![ios_sim.to_str().unwrap_or("").to_string()],
                     RiskLevel::Review,
                     "Datos del simulador de iOS/iPadOS usados por Xcode para pruebas de apps en entorno virtual.",
-                    "Los simuladores deberÃ¡n reinstalarse. Puede requerir descargas adicionales en Xcode.",
+                    "Los simuladores deberán reinstalarse. Puede requerir descargas adicionales en Xcode.",
                     "Revisar antes de eliminar si desarrollas para iOS.",
-                    "cache"
+                    "cache",
                 ));
             }
         }
@@ -343,22 +385,22 @@ pub fn scan_system_files() -> Vec<CleanableItem> {
                 let size = get_dir_size(&cache_path);
                 items.push(CleanableItem::new(
                     "linux_user_cache",
-                    "CachÃ© de Usuario Linux",
+                    "Caché de Usuario Linux",
                     size,
                     vec![cache_path.to_str().unwrap_or("").to_string()],
                     RiskLevel::Safe,
-                    "CachÃ© de aplicaciones locales y miniaturas en la carpeta home.",
-                    "El espacio se liberarÃ¡ inmediatamente. Se regenerarÃ¡n los archivos necesarios automÃ¡ticamente.",
+                    "Caché de aplicaciones locales y miniaturas en la carpeta home.",
+                    "El espacio se liberará inmediatamente. Se regenerarán los archivos necesarios automáticamente.",
                     "Seguro de eliminar.",
-                    "cache"
+                    "cache",
                 ));
             }
 
-            // â”€â”€ systemd journal y xorg logs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            // ── systemd journal y xorg logs ─────────────────────────────────
             // /var/log/journal puede fallar sin permisos root; se intenta sin abortar
             let journal_path = PathBuf::from("/var/log/journal");
             if journal_path.exists() {
-                if let Ok(_) = fs::read_dir(&journal_path) {
+                if fs::read_dir(&journal_path).is_ok() {
                     let size = get_dir_size(&journal_path);
                     items.push(CleanableItem::new(
                         "linux_journal",
@@ -367,9 +409,9 @@ pub fn scan_system_files() -> Vec<CleanableItem> {
                         vec![journal_path.to_str().unwrap_or("").to_string()],
                         RiskLevel::Safe,
                         "Logs del sistema gestionados por systemd journal. Pueden crecer significativamente con el tiempo.",
-                        "Se eliminarÃ¡n logs de journal anteriores. Puede requerir permisos de administrador.",
+                        "Se eliminarán logs de journal anteriores. Puede requerir permisos de administrador.",
                         "Seguro de eliminar (requiere sudo).",
-                        "cache"
+                        "cache",
                     ));
                 }
             }
@@ -383,14 +425,14 @@ pub fn scan_system_files() -> Vec<CleanableItem> {
                     size,
                     vec![xorg_logs.to_str().unwrap_or("").to_string()],
                     RiskLevel::Safe,
-                    "Archivos de registro del servidor grÃ¡fico Xorg.",
-                    "Se eliminarÃ¡n logs de sesiones anteriores de Xorg. No afecta al sistema actual.",
+                    "Archivos de registro del servidor gráfico Xorg.",
+                    "Se eliminarán logs de sesiones anteriores de Xorg. No afecta al sistema actual.",
                     "Seguro de eliminar.",
-                    "cache"
+                    "cache",
                 ));
             }
 
-            // â”€â”€ Snap cache â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            // ── Snap cache ───────────────────────────────────────────────────
             let snap_path = home_path.join("snap");
             if snap_path.exists() {
                 let mut snap_size = 0u64;
@@ -408,19 +450,19 @@ pub fn scan_system_files() -> Vec<CleanableItem> {
                 if snap_size > 0 {
                     items.push(CleanableItem::new(
                         "linux_snap_cache",
-                        "CachÃ© de Paquetes Snap",
+                        "Caché de Paquetes Snap",
                         snap_size,
                         vec![snap_path.to_str().unwrap_or("").to_string()],
                         RiskLevel::Safe,
-                        "CachÃ© de datos de aplicaciones instaladas como paquetes Snap.",
-                        "Los paquetes Snap regenerarÃ¡n su cachÃ© segÃºn sea necesario.",
+                        "Caché de datos de aplicaciones instaladas como paquetes Snap.",
+                        "Los paquetes Snap regenerarán su caché según sea necesario.",
                         "Seguro de eliminar.",
-                        "cache"
+                        "cache",
                     ));
                 }
             }
 
-            // â”€â”€ Flatpak cache â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            // ── Flatpak cache ────────────────────────────────────────────────
             let flatpak_path = home_path.join(".var/app");
             if flatpak_path.exists() {
                 let mut flatpak_size = 0u64;
@@ -438,40 +480,40 @@ pub fn scan_system_files() -> Vec<CleanableItem> {
                 if flatpak_size > 0 {
                     items.push(CleanableItem::new(
                         "linux_flatpak_cache",
-                        "CachÃ© de Paquetes Flatpak",
+                        "Caché de Paquetes Flatpak",
                         flatpak_size,
                         vec![flatpak_path.to_str().unwrap_or("").to_string()],
                         RiskLevel::Safe,
-                        "CachÃ© de datos de aplicaciones instaladas como paquetes Flatpak.",
-                        "Los paquetes Flatpak regenerarÃ¡n su cachÃ© segÃºn sea necesario.",
+                        "Caché de datos de aplicaciones instaladas como paquetes Flatpak.",
+                        "Los paquetes Flatpak regenerarán su caché según sea necesario.",
                         "Seguro de eliminar.",
-                        "cache"
+                        "cache",
                     ));
                 }
             }
 
-            // â”€â”€ Yarn global cache â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            // ── Yarn global cache ────────────────────────────────────────────
             let yarn_cache = home_path.join(".yarn/cache");
             if yarn_cache.exists() {
                 let size = get_dir_size(&yarn_cache);
                 items.push(CleanableItem::new(
                     "linux_yarn_cache",
-                    "CachÃ© de Yarn",
+                    "Caché de Yarn",
                     size,
                     vec![yarn_cache.to_str().unwrap_or("").to_string()],
                     RiskLevel::Safe,
                     "Paquetes de Node.js cacheados globalmente por Yarn para acelerar instalaciones.",
-                    "Yarn descargarÃ¡ los paquetes de internet la prÃ³xima vez que ejecutes 'yarn install'.",
+                    "Yarn descargará los paquetes de internet la próxima vez que ejecutes 'yarn install'.",
                     "Seguro de eliminar.",
-                    "cache"
+                    "cache",
                 ));
             }
         }
     }
 
     // 2. Papelera de reciclaje
-    // Para simplificar, en Windows simularemos o usaremos comandos para vaciarla, pero podemos comprobar el tamaÃ±o del directorio $Recycle.Bin.
-    // Para evitar problemas de permisos leyendo $Recycle.Bin directamente, intentaremos leerlo pero si falla pondremos un tamaÃ±o mÃ­nimo simulado o 0.
+    // Para simplificar, en Windows simularemos o usaremos comandos para vaciarla, pero podemos comprobar el tamaño del directorio $Recycle.Bin.
+    // Para evitar problemas de permisos leyendo $Recycle.Bin directamente, intentaremos leerlo pero si falla pondremos un tamaño mínimo simulado o 0.
     #[cfg(target_os = "windows")]
     {
         let recycle_bin = "C:\\$Recycle.Bin";
@@ -486,13 +528,13 @@ pub fn scan_system_files() -> Vec<CleanableItem> {
             size,
             vec![recycle_bin.to_string()],
             RiskLevel::Safe,
-            "Contiene archivos que has eliminado pero que aÃºn permanecen en el disco por si deseas restaurarlos.",
-            "Los archivos eliminados se borrarÃ¡n de forma definitiva y no se podrÃ¡n recuperar con facilidad.",
+            "Contiene archivos que has eliminado pero que aún permanecen en el disco por si deseas restaurarlos.",
+            "Los archivos eliminados se borrarán de forma definitiva y no se podrán recuperar con facilidad.",
             "Seguro de eliminar permanentemente.",
-            "trash"
+            "trash",
         ));
     }
-    
+
     #[cfg(target_os = "macos")]
     {
         if let Ok(home) = env::var("HOME") {
@@ -505,9 +547,9 @@ pub fn scan_system_files() -> Vec<CleanableItem> {
                 vec![trash_path.to_str().unwrap_or("").to_string()],
                 RiskLevel::Safe,
                 "Archivos borrados temporalmente.",
-                "Se borrarÃ¡n permanentemente del sistema.",
+                "Se borrarán permanentemente del sistema.",
                 "Seguro de vaciar.",
-                "trash"
+                "trash",
             ));
         }
     }
@@ -524,9 +566,9 @@ pub fn scan_system_files() -> Vec<CleanableItem> {
                 vec![trash_path.to_str().unwrap_or("").to_string()],
                 RiskLevel::Safe,
                 "Archivos borrados temporalmente.",
-                "Se vaciarÃ¡ la papelera de escritorio del usuario de forma irreversible.",
+                "Se vaciará la papelera de escritorio del usuario de forma irreversible.",
                 "Seguro de vaciar.",
-                "trash"
+                "trash",
             ));
         }
     }
@@ -543,14 +585,14 @@ pub fn scan_system_files() -> Vec<CleanableItem> {
                 vec![downloads.to_str().unwrap_or("").to_string()],
                 RiskLevel::Review,
                 "Contiene archivos descargados de Internet, instaladores (.exe, .dmg, .pkg, .deb), PDFs, etc.",
-                "Se eliminarÃ¡n todos los archivos guardados en la carpeta Descargas. PodrÃ­as perder informaciÃ³n que no hayas respaldado en otras carpetas.",
-                "Requiere confirmaciÃ³n explÃ­cita del usuario.",
-                "temp"
+                "Se eliminarán todos los archivos guardados en la carpeta Descargas. Podrías perder información que no hayas respaldado en otras carpetas.",
+                "Requiere confirmación explícita del usuario.",
+                "temp",
             ));
         }
     }
 
-    // 4. CachÃ© de Desarrolladores (NPM, Pip, NuGet)
+    // 4. Caché de Desarrolladores (NPM, Pip, NuGet)
     if let Ok(home_dir) = env::var("USERPROFILE").or_else(|_| env::var("HOME")) {
         let home_path = PathBuf::from(&home_dir);
 
@@ -560,14 +602,14 @@ pub fn scan_system_files() -> Vec<CleanableItem> {
             let size = get_dir_size(&npm_path);
             items.push(CleanableItem::new(
                 "npm_cache",
-                "CachÃ© de NPM (Node.js)",
+                "Caché de NPM (Node.js)",
                 size,
                 vec![npm_path.to_str().unwrap_or("").to_string()],
                 RiskLevel::Safe,
-                "Descargas cacheadas de paquetes e informaciÃ³n de dependencias por Node Package Manager (npm).",
-                "NPM descargarÃ¡ los paquetes directamente de internet la prÃ³xima vez que ejecutes 'npm install'.",
+                "Descargas cacheadas de paquetes e información de dependencias por Node Package Manager (npm).",
+                "NPM descargará los paquetes directamente de internet la próxima vez que ejecutes 'npm install'.",
                 "Seguro de eliminar.",
-                "cache"
+                "cache",
             ));
         }
 
@@ -585,14 +627,14 @@ pub fn scan_system_files() -> Vec<CleanableItem> {
             let size = get_dir_size(&pip_path);
             items.push(CleanableItem::new(
                 "pip_cache",
-                "CachÃ© de Pip (Python)",
+                "Caché de Pip (Python)",
                 size,
                 vec![pip_path.to_str().unwrap_or("").to_string()],
                 RiskLevel::Safe,
-                "Descargas locales cacheadas de librerÃ­as e instaladores de Python por pip.",
-                "Pip descargarÃ¡ los paquetes desde PyPI si no los encuentra localmente al instalar dependencias.",
+                "Descargas locales cacheadas de librerías e instaladores de Python por pip.",
+                "Pip descargará los paquetes desde PyPI si no los encuentra localmente al instalar dependencias.",
                 "Seguro de eliminar.",
-                "cache"
+                "cache",
             ));
         }
 
@@ -602,14 +644,14 @@ pub fn scan_system_files() -> Vec<CleanableItem> {
             let size = get_dir_size(&nuget_path);
             items.push(CleanableItem::new(
                 "nuget_cache",
-                "CachÃ© de NuGet (.NET)",
+                "Caché de NuGet (.NET)",
                 size,
                 vec![nuget_path.to_str().unwrap_or("").to_string()],
                 RiskLevel::Safe,
-                "Paquetes de librerÃ­as .NET compilados y cacheados localmente en tu perfil de usuario.",
-                "Los proyectos volverÃ¡n a descargar los paquetes NuGet necesarios cuando compiles la soluciÃ³n.",
+                "Paquetes de librerías .NET compilados y cacheados localmente en tu perfil de usuario.",
+                "Los proyectos volverán a descargar los paquetes NuGet necesarios cuando compiles la solución.",
                 "Seguro de eliminar.",
-                "cache"
+                "cache",
             ));
         }
     }
@@ -617,7 +659,7 @@ pub fn scan_system_files() -> Vec<CleanableItem> {
     items
 }
 
-/// Escanea los navegadores y sus datos (cachÃ© y sesiones/cookies sensibles)
+/// Escanea los navegadores y sus datos (caché y sesiones/cookies sensibles)
 pub fn scan_browser_files() -> Vec<CleanableItem> {
     let mut items = Vec::new();
     let browsers = get_browser_paths();
@@ -630,11 +672,15 @@ pub fn scan_browser_files() -> Vec<CleanableItem> {
         // ID amigable
         let browser_id = name.to_lowercase();
 
-        // 1. CachÃ© del navegador (SAFE)
+        // 1. Caché del navegador (SAFE)
         let cache_dirs = match name.as_str() {
-            "Firefox" => vec![path.join("cache2")], // Firefox tiene las cachÃ©s en subcarpetas
+            "Firefox" => vec![path.join("cache2")], // Firefox tiene las cachés en subcarpetas
             "Safari" => vec![path.join("Caches"), path.join("LocalStorage")],
-            _ => vec![path.join("Default\\Cache"), path.join("Default\\Code Cache"), path.join("Cache")], // Chromium browsers
+            _ => vec![
+                path.join("Default\\Cache"),
+                path.join("Default\\Code Cache"),
+                path.join("Cache"),
+            ], // Chromium browsers
         };
 
         let mut cache_size = 0;
@@ -649,18 +695,18 @@ pub fn scan_browser_files() -> Vec<CleanableItem> {
         if !cache_paths.is_empty() {
             items.push(CleanableItem::new(
                 &format!("{}_cache", browser_id),
-                &format!("CachÃ© de {}", name),
+                &format!("Caché de {}", name),
                 cache_size,
                 cache_paths,
                 RiskLevel::Safe,
-                &format!("Archivos temporales e imÃ¡genes cacheadas de pÃ¡ginas web en {}.", name),
-                "Las pÃ¡ginas web que visitas con frecuencia podrÃ­an tardar un poco mÃ¡s en cargar la primera vez, pero se optimiza el espacio.",
+                &format!("Archivos temporales e imágenes cacheadas de páginas web en {}.", name),
+                "Las páginas web que visitas con frecuencia podrían tardar un poco más en cargar la primera vez, pero se optimiza el espacio.",
                 "Seguro de eliminar.",
-                "browser_cache"
+                "browser_cache",
             ));
         }
 
-        // 2. Historial de navegaciÃ³n (REVIEW)
+        // 2. Historial de navegación (REVIEW)
         let mut history_size = 0;
         let history_files = match name.as_str() {
             "Firefox" => vec!["places.sqlite".to_string()],
@@ -682,14 +728,14 @@ pub fn scan_browser_files() -> Vec<CleanableItem> {
         if !history_paths.is_empty() {
             items.push(CleanableItem::new(
                 &format!("{}_history", browser_id),
-                &format!("Historial de navegaciÃ³n de {}", name),
+                &format!("Historial de navegación de {}", name),
                 history_size,
                 history_paths,
                 RiskLevel::Review,
                 &format!("Listado de sitios web visitados en {} recientemente.", name),
-                "Se borrarÃ¡ el historial de navegaciÃ³n. No podrÃ¡s usar la funciÃ³n de autocompletado de URLs basada en tu historial.",
-                "Requiere confirmaciÃ³n. Borra tu rastro de navegaciÃ³n.",
-                "browser_history"
+                "Se borrará el historial de navegación. No podrás usar la función de autocompletado de URLs basada en tu historial.",
+                "Requiere confirmación. Borra tu rastro de navegación.",
+                "browser_history",
             ));
         }
 
@@ -705,11 +751,13 @@ pub fn scan_browser_files() -> Vec<CleanableItem> {
                             if profile_path.is_dir() {
                                 if let Ok(files) = fs::read_dir(&profile_path) {
                                     for file in files.flatten() {
-                                        let fname = file.file_name().to_string_lossy().to_lowercase();
+                                        let fname =
+                                            file.file_name().to_string_lossy().to_lowercase();
                                         if fname.ends_with(".part") {
                                             if let Ok(meta) = file.metadata() {
                                                 artifact_size += meta.len();
-                                                artifact_paths.push(file.path().to_string_lossy().to_string());
+                                                artifact_paths
+                                                    .push(file.path().to_string_lossy().to_string());
                                             }
                                         }
                                     }
@@ -748,9 +796,9 @@ pub fn scan_browser_files() -> Vec<CleanableItem> {
                     artifact_paths,
                     RiskLevel::Safe,
                     &format!("Archivos de descarga que se interrumpieron en {} (Mega, YouTube, etc.). Estos archivos ocupan espacio sin utilidad.", name),
-                    "Se eliminarÃ¡n solo los archivos de descarga incompletos. Las descargas completadas no se verÃ¡n afectadas.",
+                    "Se eliminarán solo los archivos de descarga incompletos. Las descargas completadas no se verán afectadas.",
                     "Seguro de eliminar.",
-                    "browser_download_artifacts"
+                    "browser_download_artifacts",
                 ));
             }
         }
@@ -759,7 +807,10 @@ pub fn scan_browser_files() -> Vec<CleanableItem> {
         let mut session_size = 0;
         let mut session_paths: Vec<String> = Vec::new();
         let session_files = match name.as_str() {
-            "Firefox" => vec!["cookies.sqlite".to_string(), "sessionstore.jsonlz4".to_string()],
+            "Firefox" => vec![
+                "cookies.sqlite".to_string(),
+                "sessionstore.jsonlz4".to_string(),
+            ],
             "Safari" => vec!["Cookies.binarycookies".to_string()],
             _ => vec![
                 "Default\\Cookies".to_string(),
@@ -767,7 +818,7 @@ pub fn scan_browser_files() -> Vec<CleanableItem> {
                 "Default\\Current Session".to_string(),
                 "Default\\Current Tabs".to_string(),
                 "Default\\Local Storage".to_string(),
-                "Default\\Login Data".to_string(), // Datos de login (contraseÃ±as guardadas)
+                "Default\\Login Data".to_string(), // Datos de login (contraseñas guardadas)
                 "Cookies".to_string(),
                 "Local Storage".to_string(),
             ],
@@ -792,7 +843,7 @@ pub fn scan_browser_files() -> Vec<CleanableItem> {
                 &format!("Cookies, sesiones de usuario abiertas, contraseñas cifradas y tokens de autenticación en {}.", name),
                 "Eliminar este elemento cerrará tus sesiones activas en páginas web (correo, redes sociales) y requerirá que vuelvas a introducir tus contraseñas.",
                 "ADVERTENCIA: Cerrará tus sesiones activas.",
-                "browser_session"
+                "browser_session",
             ));
         }
     }
