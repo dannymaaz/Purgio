@@ -43,9 +43,10 @@ pub fn is_path_critical(path_str: &str) -> bool {
             || (path_lower.starts_with("/library")
                 && !path_lower.contains("caches")
                 && !path_lower.contains("logs"))
-            || path_lower.starts_with("/usr/bin")
+            || path_lower.starts_with("/usr")
             || path_lower.starts_with("/bin")
             || path_lower.starts_with("/sbin")
+            || path_lower.starts_with("/etc")
             || path_lower.starts_with("/private/var/db")
         {
             return true;
