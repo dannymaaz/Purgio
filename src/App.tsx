@@ -75,6 +75,7 @@ export const App: React.FC = () => {
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [showUpdateModal, setShowUpdateModal] = useState<boolean>(false);
   const [updateDismissed, setUpdateDismissed] = useState<boolean>(false);
+  const [isUpdating, setIsUpdating] = useState<boolean>(false);
 
   // Toast notifications
   const { toasts, addToast, removeToast } = useToast();
@@ -145,6 +146,19 @@ export const App: React.FC = () => {
     const timer = setTimeout(checkForUpdates, 3000);
     return () => clearTimeout(timer);
   }, [checkForUpdates]);
+
+  const installUpdate = useCallback(async () => {
+    setIsUpdating(true);
+    try {
+      addToast('Descargando y verificando la actualización…', 'info', 5000);
+      await invoke('install_update');
+      // El backend reinicia Purgio únicamente después de verificar e instalar el paquete.
+    } catch (e) {
+      console.error('Error al instalar la actualización:', e);
+      addToast(`No se pudo instalar la actualización: ${String(e)}`, 'error', 7000);
+      setIsUpdating(false);
+    }
+  }, [addToast]);
 
   // Cargar procesos en segundo plano y arranque al entrar a sus pestañas
   useEffect(() => {
@@ -594,32 +608,24 @@ export const App: React.FC = () => {
                 </div>
               )}
               <p style={{ marginTop: '12px', fontSize: '13px', color: 'var(--text-secondary)' }}>
-                Al actualizar, Purgio descargará el instalador y se reiniciará automáticamente. ¿Deseas continuar?
+                Purgio descargará el paquete correspondiente a este sistema, verificará su firma criptográfica y solo entonces lo instalará y reiniciará la aplicación. ¿Deseas continuar?
               </p>
             </div>
             <div className="modal-actions">
               <button
                 className="btn btn-secondary"
                 onClick={() => { setShowUpdateModal(false); setUpdateDismissed(true); }}
+                disabled={isUpdating}
               >
                 Ahora no
               </button>
-              {updateInfo.download_url ? (
-                <a
-                  href={updateInfo.download_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="btn btn-primary"
-                  style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-                  onClick={() => setShowUpdateModal(false)}
-                >
-                  Descargar actualización
-                </a>
-              ) : (
-                <button className="btn btn-primary" disabled>
-                  Sin URL de descarga
-                </button>
-              )}
+              <button
+                className="btn btn-primary"
+                onClick={installUpdate}
+                disabled={isUpdating}
+              >
+                {isUpdating ? 'Actualizando…' : 'Instalar actualización'}
+              </button>
             </div>
           </div>
         </div>
