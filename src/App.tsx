@@ -56,6 +56,11 @@ interface PersistedState {
   preferences: AppPreferences;
 }
 
+interface CleanupPlanPreview {
+  revision: string;
+  items: CleanableItem[];
+}
+
 export const App: React.FC = () => {
   // Pestaña activa
   const [currentTab, setCurrentTab] = useState<string>('dashboard');
@@ -83,6 +88,7 @@ export const App: React.FC = () => {
 
   // Estados de Modales
   const [cleanupPlan, setCleanupPlan] = useState<CleanableItem[]>([]);
+  const [cleanupPlanRevision, setCleanupPlanRevision] = useState<string | null>(null);
   const [cleanupResult, setCleanupResult] = useState<CleanupRunResult | null>(null);
   const [isPreparingCleanPlan, setIsPreparingCleanPlan] = useState<boolean>(false);
   const [showDisableModal, setShowDisableModal] = useState<boolean>(false);
@@ -344,12 +350,13 @@ export const App: React.FC = () => {
   // Cleanup Plan backend-authoritative. La UI entrega únicamente IDs; Rust vuelve a
   // resolver catálogo, rutas, riesgos y tamaños inmediatamente antes de mostrar el plan.
   const executeClean = useCallback(async (selected: CleanableItem[]) => {
-    if (isCleaning || selected.length === 0) return;
+    if (isCleaning || selected.length === 0 || !cleanupPlanRevision) return;
 
     setIsCleaning(true);
     try {
       const result = await invoke<CleanupRunResult>('clean_items', {
         itemIds: selected.map(item => item.id),
+        planRevision: cleanupPlanRevision,
       });
       setCleanupResult(result);
 
@@ -385,29 +392,43 @@ export const App: React.FC = () => {
       await runScan();
       fetchSystemStats();
     } catch (e) {
+      const message = String(e);
       console.error('Error durante la limpieza:', e);
-      addToast(`${t('Error durante la limpieza:')} ${String(e)}`, 'error', 6000);
+
+      if (message.includes('PLAN_CHANGED')) {
+        setCleanupPlan([]);
+        setCleanupPlanRevision(null);
+        setCleanupResult(null);
+        addToast(
+          t('El alcance del plan cambió desde que lo revisaste. Purgio no eliminó nada; genera y revisa un nuevo plan.'),
+          'warning',
+          7000
+        );
+      } else {
+        addToast(`${t('Error durante la limpieza:')} ${message}`, 'error', 6000);
+      }
     } finally {
       setIsCleaning(false);
     }
-  }, [isCleaning, runScan, fetchSystemStats, addToast, activeLanguage, t]);
+  }, [isCleaning, cleanupPlanRevision, runScan, fetchSystemStats, addToast, activeLanguage, t]);
 
   const handleCleanTrigger = useCallback(async (selected: CleanableItem[]) => {
     if (isCleaning || isPreparingCleanPlan || selected.length === 0) return;
 
     setIsPreparingCleanPlan(true);
     try {
-      const preview = await invoke<CleanableItem[]>('preview_clean_items', {
+      const preview = await invoke<CleanupPlanPreview>('preview_clean_items', {
         itemIds: selected.map(item => item.id),
       });
 
-      if (preview.length === 0) {
+      if (preview.items.length === 0) {
         addToast(t('Purgio no encontró targets autorizados para los elementos seleccionados.'), 'warning', 5000);
         return;
       }
 
       setCleanupResult(null);
-      setCleanupPlan(preview);
+      setCleanupPlanRevision(preview.revision);
+      setCleanupPlan(preview.items);
     } catch (error) {
       console.error('No se pudo preparar el Cleanup Plan:', error);
       addToast(`${t('No se pudo preparar el plan de limpieza.')} ${String(error)}`, 'error', 6000);
@@ -636,6 +657,7 @@ export const App: React.FC = () => {
           onClose={() => {
             if (isCleaning) return;
             setCleanupPlan([]);
+            setCleanupPlanRevision(null);
             setCleanupResult(null);
           }}
         />

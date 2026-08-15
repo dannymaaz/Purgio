@@ -216,6 +216,7 @@ const EN_MESSAGES = {
   'Limpieza terminada con incidencias. Se liberaron': 'Cleanup finished with issues. Freed',
   'Purgio no encontró targets autorizados para los elementos seleccionados.': 'Purgio found no authorized targets for the selected items.',
   'No se pudo preparar el plan de limpieza.': 'The cleanup plan could not be prepared.',
+  'El alcance del plan cambió desde que lo revisaste. Purgio no eliminó nada; genera y revisa un nuevo plan.': 'The plan scope changed after you reviewed it. Purgio deleted nothing; generate and review a new plan.',
 
   // Coverage-complete UI phrases
   'Versión': 'Version',
