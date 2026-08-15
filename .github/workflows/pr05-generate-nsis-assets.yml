@@ -1,0 +1,158 @@
+name: "PR-05 generate NSIS branding assets"
+
+on:
+  push:
+    branches:
+      - agent/pr-05-windows-installer-branding
+    paths:
+      - .github/workflows/pr05-generate-nsis-assets.yml
+
+permissions:
+  contents: write
+
+jobs:
+  generate-assets:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: "Checkout PR branch"
+        uses: actions/checkout@v7
+        with:
+          ref: agent/pr-05-windows-installer-branding
+
+      - name: "Generate Purgio NSIS BMP assets"
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os, struct
+
+          OUT = "src-tauri/windows/nsis"
+          os.makedirs(OUT, exist_ok=True)
+
+          DARK = (1, 46, 64)
+          TEAL = (3, 115, 140)
+          AQUA = (0, 188, 153)
+          WHITE = (240, 249, 250)
+          MUTED = (126, 187, 195)
+
+          # Minimal 5x7 glyphs needed for the sidebar label. This keeps generation
+          # dependency-free and deterministic on GitHub Actions.
+          FONT = {
+            'P':[0b11110,0b10001,0b10001,0b11110,0b10000,0b10000,0b10000],
+            'U':[0b10001,0b10001,0b10001,0b10001,0b10001,0b10001,0b01110],
+            'R':[0b11110,0b10001,0b10001,0b11110,0b10100,0b10010,0b10001],
+            'G':[0b01110,0b10001,0b10000,0b10111,0b10001,0b10001,0b01110],
+            'I':[0b11111,0b00100,0b00100,0b00100,0b00100,0b00100,0b11111],
+            'O':[0b01110,0b10001,0b10001,0b10001,0b10001,0b10001,0b01110],
+            'W':[0b10001,0b10001,0b10001,0b10101,0b10101,0b10101,0b01010],
+            'E':[0b11111,0b10000,0b10000,0b11110,0b10000,0b10000,0b11111],
+            'D':[0b11110,0b10001,0b10001,0b10001,0b10001,0b10001,0b11110],
+            'B':[0b11110,0b10001,0b10001,0b11110,0b10001,0b10001,0b11110],
+            'Y':[0b10001,0b10001,0b01010,0b00100,0b00100,0b00100,0b00100],
+            'A':[0b01110,0b10001,0b10001,0b11111,0b10001,0b10001,0b10001],
+            'N':[0b10001,0b11001,0b10101,0b10011,0b10001,0b10001,0b10001],
+            'M':[0b10001,0b11011,0b10101,0b10101,0b10001,0b10001,0b10001],
+            'Z':[0b11111,0b00001,0b00010,0b00100,0b01000,0b10000,0b11111],
+            ' ':[0,0,0,0,0,0,0],
+          }
+
+          def lerp(a,b,t):
+              return tuple(int(a[i] + (b[i]-a[i])*t) for i in range(3))
+
+          def canvas(w,h):
+              rows=[]
+              for y in range(h):
+                  t=y/max(1,h-1)
+                  base=lerp(DARK, TEAL, t*0.55)
+                  row=[]
+                  for x in range(w):
+                      glow=max(0.0, 1.0-(((x-w*0.86)/(w*0.72))**2+((y-h*0.10)/(h*0.70))**2))
+                      row.append(lerp(base,AQUA,0.12*glow))
+                  rows.append(row)
+              return rows
+
+          def rect(img,x0,y0,x1,y1,c):
+              h=len(img); w=len(img[0])
+              for y in range(max(0,y0),min(h,y1)):
+                  for x in range(max(0,x0),min(w,x1)):
+                      img[y][x]=c
+
+          def circle(img,cx,cy,r,c):
+              h=len(img); w=len(img[0]); rr=r*r
+              for y in range(max(0,cy-r),min(h,cy+r+1)):
+                  for x in range(max(0,cx-r),min(w,cx+r+1)):
+                      if (x-cx)*(x-cx)+(y-cy)*(y-cy)<=rr:
+                          img[y][x]=c
+
+          def text(img,x,y,s,scale,c):
+              ox=x
+              for ch in s.upper():
+                  glyph=FONT.get(ch,FONT[' '])
+                  for gy,row in enumerate(glyph):
+                      for gx in range(5):
+                          if row & (1 << (4-gx)):
+                              rect(img,x+gx*scale,y+gy*scale,x+(gx+1)*scale,y+(gy+1)*scale,c)
+                  x += 6*scale
+              return x-ox
+
+          def write_bmp(path,img):
+              h=len(img); w=len(img[0]); row_bytes=(w*3+3)&~3
+              data_size=row_bytes*h; offset=54; size=offset+data_size
+              with open(path,'wb') as f:
+                  f.write(b'BM')
+                  f.write(struct.pack('<IHHI',size,0,0,offset))
+                  f.write(struct.pack('<IIIHHIIIIII',40,w,h,1,24,0,data_size,3780,3780,0,0))
+                  pad=b'\x00'*(row_bytes-w*3)
+                  for row in reversed(img):
+                      for r,g,b in row:
+                          f.write(bytes((b,g,r)))
+                      f.write(pad)
+
+          # 150x57: understated header used by installer + uninstaller.
+          header=canvas(150,57)
+          circle(header,24,28,13,AQUA)
+          circle(header,24,28,7,DARK)
+          rect(header,23,13,27,43,AQUA)
+          text(header,48,18,'PURGIO',3,WHITE)
+          rect(header,48,43,132,45,AQUA)
+          write_bmp(f'{OUT}/header.bmp',header)
+
+          # 164x314: premium vertical panel with exact creator attribution.
+          side=canvas(164,314)
+          circle(side,82,70,34,AQUA)
+          circle(side,82,70,19,DARK)
+          rect(side,78,32,86,108,AQUA)
+          text(side,28,132,'PURGIO',4,WHITE)
+          rect(side,28,171,136,174,AQUA)
+          text(side,16,257,'POWERED BY',2,MUTED)
+          text(side,28,279,'DANNY MAAZ',2,WHITE)
+          write_bmp(f'{OUT}/sidebar.bmp',side)
+
+          print('Generated:', f'{OUT}/header.bmp', f'{OUT}/sidebar.bmp')
+          PY
+
+      - name: "Verify official NSIS image dimensions"
+        shell: bash
+        run: |
+          python - <<'PY'
+          import struct
+          expected = {
+              'src-tauri/windows/nsis/header.bmp': (150,57),
+              'src-tauri/windows/nsis/sidebar.bmp': (164,314),
+          }
+          for path, wanted in expected.items():
+              with open(path,'rb') as f:
+                  f.seek(18)
+                  size=struct.unpack('<II',f.read(8))
+              assert size == wanted, (path,size,wanted)
+              print(path, size)
+          PY
+
+      - name: "Commit assets and remove one-off workflow"
+        shell: bash
+        run: |
+          git config user.name "Danny Maaz"
+          git config user.email "61290346+dannymaaz@users.noreply.github.com"
+          git add src-tauri/windows/nsis/header.bmp src-tauri/windows/nsis/sidebar.bmp
+          git rm .github/workflows/pr05-generate-nsis-assets.yml
+          git commit -m "Add Purgio NSIS branding assets"
+          git push origin HEAD:agent/pr-05-windows-installer-branding
