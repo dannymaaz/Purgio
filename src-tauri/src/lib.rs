@@ -1,6 +1,6 @@
+mod cleaner;
 mod safety;
 mod scanner;
-mod cleaner;
 mod startup;
 mod system;
 mod updater;
@@ -51,10 +51,12 @@ fn resolve_requested_items(item_ids: &[String]) -> Result<Vec<CleanableItem>, St
             continue;
         }
 
-        let item = catalog
-            .get(item_id)
-            .cloned()
-            .ok_or_else(|| format!("Elemento de limpieza no autorizado o inexistente: {}", item_id))?;
+        let item = catalog.get(item_id).cloned().ok_or_else(|| {
+            format!(
+                "Elemento de limpieza no autorizado o inexistente: {}",
+                item_id
+            )
+        })?;
 
         resolved.push(item);
     }
@@ -117,7 +119,11 @@ fn disable_startup(id: String, location_key: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn enable_startup(name: String, location_key: String, original_command: String) -> Result<(), String> {
+fn enable_startup(
+    name: String,
+    location_key: String,
+    original_command: String,
+) -> Result<(), String> {
     startup::enable_startup_item(&name, &location_key, &original_command)
 }
 
