@@ -1,9 +1,11 @@
+mod cleaner;
 mod safety;
 mod scanner;
-mod cleaner;
 mod startup;
 mod system;
 mod updater;
+
+use std::collections::{HashMap, HashSet};
 
 use scanner::CleanableItem;
 use startup::StartupItem;
@@ -24,25 +26,79 @@ fn scan_browser_files() -> Vec<CleanableItem> {
     scanner::scan_browser_files()
 }
 
+/// Construye el catálogo autorizado de elementos limpiables directamente en Rust.
+///
+/// Las rutas que puedan llegar desde la interfaz nunca se usan para borrar. Cada
+/// operación se reconstruye a partir del ID emitido por los escáneres del backend.
+fn build_cleanable_catalog() -> HashMap<String, CleanableItem> {
+    scanner::scan_system_files()
+        .into_iter()
+        .chain(scanner::scan_browser_files())
+        .map(|item| (item.id.clone(), item))
+        .collect()
+}
+
+/// Resuelve IDs solicitados contra el catálogo generado por el backend.
+/// IDs desconocidos se rechazan y los duplicados se deduplican para impedir
+/// ejecutar dos veces una misma operación destructiva.
+fn resolve_requested_items(item_ids: &[String]) -> Result<Vec<CleanableItem>, String> {
+    let catalog = build_cleanable_catalog();
+    let mut seen = HashSet::new();
+    let mut resolved = Vec::with_capacity(item_ids.len());
+
+    for item_id in item_ids {
+        if !seen.insert(item_id.clone()) {
+            continue;
+        }
+
+        let item = catalog.get(item_id).cloned().ok_or_else(|| {
+            format!(
+                "Elemento de limpieza no autorizado o inexistente: {}",
+                item_id
+            )
+        })?;
+
+        resolved.push(item);
+    }
+
+    Ok(resolved)
+}
+
+/// Dry-run de limpieza. Devuelve exactamente los elementos que Rust reconoce
+/// para los IDs solicitados, incluyendo rutas, tamaño estimado, nivel de riesgo
+/// e impacto. No modifica el sistema.
+#[tauri::command]
+fn preview_clean_items(item_ids: Vec<String>) -> Result<Vec<CleanableItem>, String> {
+    resolve_requested_items(&item_ids)
+}
+
+/// Ejecuta una limpieza reconstruyendo cada operación desde el catálogo de Rust.
+///
+/// Se mantiene `Vec<CleanableItem>` como contrato temporal para no romper la UI
+/// existente, pero solo se leen los IDs. `paths`, `size`, `risk_level`, `selected`
+/// y el resto de campos enviados por el frontend se consideran datos no confiables.
 #[tauri::command]
 fn clean_items(items: Vec<CleanableItem>) -> Result<u64, String> {
+    let item_ids: Vec<String> = items.into_iter().map(|item| item.id).collect();
+    let authorized_items = resolve_requested_items(&item_ids)?;
+
     let mut total_freed = 0;
     let mut errors = Vec::new();
 
-    for item in items {
-        if item.selected {
-            let is_sensitive = matches!(item.risk_level, safety::RiskLevel::Sensitive);
-            for path in &item.paths {
-                match cleaner::clean_path_safely(path, is_sensitive) {
-                    Ok(bytes) => total_freed += bytes,
-                    Err(e) => errors.push(format!("{}: {}", item.name, e)),
-                }
+    for item in authorized_items {
+        let is_sensitive = matches!(item.risk_level, safety::RiskLevel::Sensitive);
+
+        for path in &item.paths {
+            match cleaner::clean_path_safely(path, is_sensitive) {
+                Ok(bytes) => total_freed += bytes,
+                Err(e) => errors.push(format!("{}: {}", item.name, e)),
             }
         }
     }
 
     if !errors.is_empty() {
-        // Retornar error descriptivo si algo falló, pero manteniendo los bytes liberados si los hubo
+        // Mantener el comportamiento histórico: si una limpieza parcial liberó
+        // espacio, informar los bytes liberados en vez de perder el resultado.
         if total_freed > 0 {
             return Ok(total_freed);
         }
@@ -63,7 +119,11 @@ fn disable_startup(id: String, location_key: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn enable_startup(name: String, location_key: String, original_command: String) -> Result<(), String> {
+fn enable_startup(
+    name: String,
+    location_key: String,
+    original_command: String,
+) -> Result<(), String> {
     startup::enable_startup_item(&name, &location_key, &original_command)
 }
 
@@ -83,13 +143,12 @@ fn kill_background_process_group(name: String) -> Result<usize, String> {
     system::kill_process_group(&name)
 }
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
-
 #[tauri::command]
 fn check_for_updates() -> updater::UpdateInfo {
     updater::check_for_updates()
 }
 
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -97,6 +156,7 @@ pub fn run() {
             get_system_stats,
             scan_system_files,
             scan_browser_files,
+            preview_clean_items,
             clean_items,
             get_startup_items,
             disable_startup,
@@ -109,7 +169,3 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
-
-
-
-
