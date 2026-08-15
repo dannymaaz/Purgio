@@ -43,6 +43,8 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "publisher": "Danny Maaz",
+    "copyright": "© 2026 Danny Maaz — Purgio",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -52,7 +54,17 @@
     ],
     "windows": {
       "nsis": {
-        "installMode": "currentUser"
+        "installMode": "currentUser",
+        "installerIcon": "icons/icon.ico",
+        "uninstallerIcon": "icons/icon.ico",
+        "headerImage": "windows/nsis/header.bmp",
+        "sidebarImage": "windows/nsis/sidebar.bmp",
+        "uninstallerHeaderImage": "windows/nsis/header.bmp",
+        "languages": [
+          "English",
+          "Spanish"
+        ],
+        "displayLanguageSelector": false
       }
     }
   },
