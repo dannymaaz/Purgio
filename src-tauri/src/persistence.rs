@@ -202,7 +202,9 @@ fn write_state(path: &Path, state: &PersistedState) -> Result<(), String> {
         if backup.exists() && !path.exists() {
             let _ = fs::rename(&backup, path);
         }
-        return Err(format!("No se pudo confirmar la nueva configuración: {error}"));
+        return Err(format!(
+            "No se pudo confirmar la nueva configuración: {error}"
+        ));
     }
 
     if backup.exists() {
@@ -228,10 +230,7 @@ pub fn load_app_state(app: tauri::AppHandle) -> Result<PersistedState, String> {
 }
 
 #[tauri::command]
-pub fn save_preferences(
-    app: tauri::AppHandle,
-    preferences: AppPreferences,
-) -> Result<(), String> {
+pub fn save_preferences(app: tauri::AppHandle, preferences: AppPreferences) -> Result<(), String> {
     validate_preferences(&preferences)?;
 
     with_state_lock(|| {
