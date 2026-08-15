@@ -1,0 +1,72 @@
+name: "PR-06 separate cleanup and history result"
+
+on:
+  push:
+    branches:
+      - agent/pr-06-persisted-settings
+    paths:
+      - '.github/workflows/pr06-history-result.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: "Checkout"
+        uses: actions/checkout@v7
+        with:
+          ref: agent/pr-06-persisted-settings
+
+      - name: "Separate cleanup success from history persistence"
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/App.tsx')
+          text = path.read_text(encoding='utf-8')
+          old = """      const bytesFreed = await invoke<number>('clean_items', { items: selected });
+
+      // Guardar en historial
+      await addHistoryEntry(bytesFreed, selected.length);
+
+      addToast(
+        `✓ Limpieza completada. Se liberaron ${formatBytes(bytesFreed)} de espacio.`,
+        'success',
+        5000
+      );
+"""
+          new = """      const bytesFreed = await invoke<number>('clean_items', { items: selected });
+
+      // La limpieza y el historial son resultados independientes: una falla al
+      // persistir el registro no puede reinterpretar una eliminación ya completada.
+      try {
+        await addHistoryEntry(bytesFreed, selected.length);
+      } catch (historyError) {
+        console.error('La limpieza terminó pero no se pudo guardar el historial:', historyError);
+        addToast(
+          'La limpieza se completó, pero no se pudo guardar la entrada en el historial.',
+          'warning',
+          6000
+        );
+      }
+
+      addToast(
+        `✓ Limpieza completada. Se liberaron ${formatBytes(bytesFreed)} de espacio.`,
+        'success',
+        5000
+      );
+"""
+          if old not in text:
+              raise SystemExit('cleanup history block not found')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+
+          git rm .github/workflows/pr06-history-result.yml
+          git config user.name "Danny Maaz"
+          git config user.email "61290346+dannymaaz@users.noreply.github.com"
+          git add src/App.tsx
+          git commit -m "Keep cleanup result independent from history persistence"
+          git push origin HEAD:agent/pr-06-persisted-settings
