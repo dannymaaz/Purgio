@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
+import { resolveLanguage } from '../src/i18n-core.ts';
 
 const root = process.cwd();
 const sourceRoot = join(root, 'src');
@@ -41,4 +42,22 @@ if (missing.length > 0) {
   process.exit(1);
 }
 
-console.log(`i18n coverage OK: ${dictionaryKeys.size} English message keys.`);
+const localeCases = [
+  ['system', 'es-GT', 'es'],
+  ['system', 'es_ES', 'es'],
+  ['system', 'en-US', 'en'],
+  ['system', 'fr-FR', 'en'],
+  ['system', null, 'en'],
+  ['es', 'en-US', 'es'],
+  ['en', 'es-GT', 'en'],
+];
+
+for (const [preference, locale, expected] of localeCases) {
+  const actual = resolveLanguage(preference, locale);
+  if (actual !== expected) {
+    console.error(`Locale resolution failed: ${preference}/${locale} -> ${actual}; expected ${expected}`);
+    process.exit(1);
+  }
+}
+
+console.log(`i18n coverage OK: ${dictionaryKeys.size} English message keys; ${localeCases.length} locale cases passed.`);
