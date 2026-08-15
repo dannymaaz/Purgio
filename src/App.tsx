@@ -18,7 +18,7 @@ import { ToastContainer, useToast } from './components/Toast';
 // Utilidades
 import { formatBytes } from './utils/format';
 import { addHistoryEntry, clearLegacyHistory, readLegacyHistory } from './utils/history';
-import { I18nProvider, LanguagePreference, resolveLanguage, translateBackendText } from './i18n';
+import { I18nProvider, LanguagePreference, resolveLanguage, translate, translateBackendText } from './i18n';
 
 // Tipos correctamente tipados desde el backend
 interface SystemStats {

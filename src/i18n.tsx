@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useMemo } from 'react';
-import type { LanguagePreference, UiLanguage } from './i18n-core';
+import type { UiLanguage } from './i18n-core';
 
 export type { LanguagePreference, UiLanguage } from './i18n-core';
 export { resolveLanguage } from './i18n-core';
@@ -267,7 +267,7 @@ export type MessageSource = keyof typeof EN_MESSAGES;
 function interpolate(text: string, values?: Values): string {
   if (!values) return text;
   return Object.entries(values).reduce(
-    (result, [key, value]) => result.replaceAll(`{{${key}}}`, String(value)),
+    (result, [key, value]) => result.split(`{{${key}}}`).join(String(value)),
     text,
   );
 }
