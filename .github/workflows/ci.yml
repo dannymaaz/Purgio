@@ -64,7 +64,7 @@ jobs:
         with:
           components: rustfmt, clippy
 
-      - name: "Check security and persistence formatting"
+      - name: "Check security, cleanup and persistence formatting"
         run: rustfmt --edition 2021 --check src-tauri/src/cleaner.rs src-tauri/src/safety.rs src-tauri/src/persistence.rs
 
       - name: "Run tests"

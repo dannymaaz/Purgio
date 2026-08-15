@@ -99,8 +99,8 @@ export const Settings: React.FC<SettingsProps> = ({
 
         <div className="settings-row">
           <div className="settings-row-left">
-            <span className="settings-row-title">{t('Confirmar antes de Limpiar')}</span>
-            <span className="settings-row-desc">{t('Muestra una advertencia antes de borrar archivos seleccionados.')}</span>
+            <span className="settings-row-title">{t('Confirmación reforzada de riesgo')}</span>
+            <span className="settings-row-desc">{t('El Cleanup Plan siempre se muestra. Esta opción exige además una aceptación explícita cuando el plan contiene elementos en revisión o sensibles.')}</span>
           </div>
           <div>
             <label className="toggle-switch">
@@ -108,7 +108,7 @@ export const Settings: React.FC<SettingsProps> = ({
                 type="checkbox"
                 checked={confirmDelete}
                 onChange={(e) => setConfirmDelete(e.target.checked)}
-                aria-label={t('Confirmar antes de limpiar')}
+                aria-label={t('Confirmación reforzada de riesgo')}
               />
               <span className="slider"></span>
             </label>
