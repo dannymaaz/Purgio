@@ -28,8 +28,8 @@ fn scan_browser_files() -> Vec<CleanableItem> {
 
 /// Construye el catálogo autorizado de elementos limpiables directamente en Rust.
 ///
-/// El frontend nunca puede proporcionar rutas de archivos para una limpieza. Solo
-/// puede solicitar IDs que hayan sido definidos por los escáneres del backend.
+/// Las rutas que puedan llegar desde la interfaz nunca se usan para borrar. Cada
+/// operación se reconstruye a partir del ID emitido por los escáneres del backend.
 fn build_cleanable_catalog() -> HashMap<String, CleanableItem> {
     scanner::scan_system_files()
         .into_iter()
@@ -70,15 +70,20 @@ fn preview_clean_items(item_ids: Vec<String>) -> Result<Vec<CleanableItem>, Stri
     resolve_requested_items(&item_ids)
 }
 
-/// Ejecuta una limpieza usando únicamente IDs autorizados por el backend.
-/// Las rutas recibidas desde la interfaz dejaron de formar parte del contrato IPC.
+/// Ejecuta una limpieza reconstruyendo cada operación desde el catálogo de Rust.
+///
+/// Se mantiene `Vec<CleanableItem>` como contrato temporal para no romper la UI
+/// existente, pero solo se leen los IDs. `paths`, `size`, `risk_level`, `selected`
+/// y el resto de campos enviados por el frontend se consideran datos no confiables.
 #[tauri::command]
-fn clean_items(item_ids: Vec<String>) -> Result<u64, String> {
-    let items = resolve_requested_items(&item_ids)?;
+fn clean_items(items: Vec<CleanableItem>) -> Result<u64, String> {
+    let item_ids: Vec<String> = items.into_iter().map(|item| item.id).collect();
+    let authorized_items = resolve_requested_items(&item_ids)?;
+
     let mut total_freed = 0;
     let mut errors = Vec::new();
 
-    for item in items {
+    for item in authorized_items {
         let is_sensitive = matches!(item.risk_level, safety::RiskLevel::Sensitive);
 
         for path in &item.paths {
