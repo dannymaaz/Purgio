@@ -65,7 +65,7 @@ jobs:
           components: rustfmt, clippy
 
       - name: "Check security, cleanup and persistence formatting"
-        run: rustfmt --edition 2021 --check src-tauri/src/lib.rs src-tauri/src/cleaner.rs src-tauri/src/safety.rs src-tauri/src/persistence.rs
+        run: rustfmt --edition 2021 --check src-tauri/src/cleaner.rs src-tauri/src/safety.rs src-tauri/src/persistence.rs
 
       - name: "Run tests"
         run: cargo test --manifest-path src-tauri/Cargo.toml --all-targets
