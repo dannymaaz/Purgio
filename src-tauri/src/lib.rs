@@ -8,9 +8,33 @@ mod updater;
 
 use std::collections::{HashMap, HashSet};
 
+use cleaner::{CleanupPathResult, CleanupStatus};
 use scanner::CleanableItem;
+use serde::Serialize;
 use startup::StartupItem;
 use system::{ProcessItem, SystemStats};
+
+#[derive(Debug, Clone, Serialize)]
+struct CleanupItemResult {
+    id: String,
+    name: String,
+    estimated_bytes: u64,
+    bytes_freed: u64,
+    status: CleanupStatus,
+    paths: Vec<CleanupPathResult>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct CleanupRunResult {
+    estimated_bytes: u64,
+    bytes_freed: u64,
+    items_attempted: usize,
+    items_completed: usize,
+    items_partial: usize,
+    items_failed: usize,
+    items_no_op: usize,
+    results: Vec<CleanupItemResult>,
+}
 
 #[tauri::command]
 fn get_system_stats() -> SystemStats {
@@ -73,40 +97,81 @@ fn preview_clean_items(item_ids: Vec<String>) -> Result<Vec<CleanableItem>, Stri
     resolve_requested_items(&item_ids)
 }
 
-/// Ejecuta una limpieza reconstruyendo cada operación desde el catálogo de Rust.
-///
-/// Se mantiene `Vec<CleanableItem>` como contrato temporal para no romper la UI
-/// existente, pero solo se leen los IDs. `paths`, `size`, `risk_level`, `selected`
-/// y el resto de campos enviados por el frontend se consideran datos no confiables.
-#[tauri::command]
-fn clean_items(items: Vec<CleanableItem>) -> Result<u64, String> {
-    let item_ids: Vec<String> = items.into_iter().map(|item| item.id).collect();
-    let authorized_items = resolve_requested_items(&item_ids)?;
+fn summarize_item_status(paths: &[CleanupPathResult]) -> CleanupStatus {
+    if paths.is_empty() || paths.iter().all(|path| path.status == CleanupStatus::NoOp) {
+        return CleanupStatus::NoOp;
+    }
 
-    let mut total_freed = 0;
-    let mut errors = Vec::new();
+    if paths.iter().all(|path| path.status == CleanupStatus::Failed) {
+        return CleanupStatus::Failed;
+    }
+
+    if paths.iter().any(|path| {
+        matches!(path.status, CleanupStatus::Partial | CleanupStatus::Failed)
+    }) {
+        return CleanupStatus::Partial;
+    }
+
+    CleanupStatus::Completed
+}
+
+/// Ejecuta una limpieza reconstruyendo cada operación exclusivamente desde IDs.
+/// La respuesta contiene resultados por item y por ruta para que la UI nunca tenga
+/// que inferir un éxito total a partir de un único contador de bytes.
+#[tauri::command]
+fn clean_items(item_ids: Vec<String>) -> Result<CleanupRunResult, String> {
+    let authorized_items = resolve_requested_items(&item_ids)?;
+    let estimated_bytes = authorized_items.iter().map(|item| item.size).sum();
+    let mut results = Vec::with_capacity(authorized_items.len());
 
     for item in authorized_items {
         let is_sensitive = matches!(item.risk_level, safety::RiskLevel::Sensitive);
+        let paths: Vec<CleanupPathResult> = item
+            .paths
+            .iter()
+            .map(|path| cleaner::clean_path_with_report(path, is_sensitive))
+            .collect();
+        let bytes_freed = paths.iter().map(|path| path.bytes_freed).sum();
+        let status = summarize_item_status(&paths);
 
-        for path in &item.paths {
-            match cleaner::clean_path_safely(path, is_sensitive) {
-                Ok(bytes) => total_freed += bytes,
-                Err(e) => errors.push(format!("{}: {}", item.name, e)),
-            }
-        }
+        results.push(CleanupItemResult {
+            id: item.id,
+            name: item.name,
+            estimated_bytes: item.size,
+            bytes_freed,
+            status,
+            paths,
+        });
     }
 
-    if !errors.is_empty() {
-        // Mantener el comportamiento histórico: si una limpieza parcial liberó
-        // espacio, informar los bytes liberados en vez de perder el resultado.
-        if total_freed > 0 {
-            return Ok(total_freed);
-        }
-        return Err(errors.join(" | "));
-    }
+    let bytes_freed = results.iter().map(|item| item.bytes_freed).sum();
+    let items_completed = results
+        .iter()
+        .filter(|item| item.status == CleanupStatus::Completed)
+        .count();
+    let items_partial = results
+        .iter()
+        .filter(|item| item.status == CleanupStatus::Partial)
+        .count();
+    let items_failed = results
+        .iter()
+        .filter(|item| item.status == CleanupStatus::Failed)
+        .count();
+    let items_no_op = results
+        .iter()
+        .filter(|item| item.status == CleanupStatus::NoOp)
+        .count();
 
-    Ok(total_freed)
+    Ok(CleanupRunResult {
+        estimated_bytes,
+        bytes_freed,
+        items_attempted: results.len(),
+        items_completed,
+        items_partial,
+        items_failed,
+        items_no_op,
+        results,
+    })
 }
 
 #[tauri::command]
@@ -152,6 +217,38 @@ async fn check_for_updates(app: tauri::AppHandle) -> Result<updater::UpdateInfo,
 #[tauri::command]
 async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
     updater::install_update(&app).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn path(status: CleanupStatus) -> CleanupPathResult {
+        CleanupPathResult {
+            path: "C:\\Temp".to_string(),
+            bytes_freed: 0,
+            status,
+            issues: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn mixed_success_and_failure_is_partial() {
+        let paths = vec![path(CleanupStatus::Completed), path(CleanupStatus::Failed)];
+        assert_eq!(summarize_item_status(&paths), CleanupStatus::Partial);
+    }
+
+    #[test]
+    fn all_failures_are_failed() {
+        let paths = vec![path(CleanupStatus::Failed), path(CleanupStatus::Failed)];
+        assert_eq!(summarize_item_status(&paths), CleanupStatus::Failed);
+    }
+
+    #[test]
+    fn completed_plus_no_op_is_completed() {
+        let paths = vec![path(CleanupStatus::Completed), path(CleanupStatus::NoOp)];
+        assert_eq!(summarize_item_status(&paths), CleanupStatus::Completed);
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
