@@ -1,0 +1,32 @@
+name: "PR-07 backend metadata translations"
+
+on:
+  push:
+    branches:
+      - pr-07-i18n
+    paths:
+      - '.github/workflows/pr07-backend-translations.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: "Checkout"
+        uses: actions/checkout@v7
+        with:
+          ref: pr-07-i18n
+
+      - name: "Apply backend metadata translations"
+        run: python scripts/pr07-backend-translations.py
+
+      - name: "Commit translations"
+        run: |
+          git rm .github/workflows/pr07-backend-translations.yml scripts/pr07-backend-translations.py
+          git config user.name "Danny Maaz"
+          git config user.email "61290346+dannymaaz@users.noreply.github.com"
+          git add src/i18n.tsx
+          git commit -m "Translate backend metadata shown in English UI"
+          git push origin HEAD:pr-07-i18n
