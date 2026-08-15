@@ -314,8 +314,18 @@ export const App: React.FC = () => {
     try {
       const bytesFreed = await invoke<number>('clean_items', { items: selected });
 
-      // Guardar en historial
-      await addHistoryEntry(bytesFreed, selected.length);
+      // La limpieza y el historial son resultados independientes: una falla al
+      // persistir el registro no puede reinterpretar una eliminación ya completada.
+      try {
+        await addHistoryEntry(bytesFreed, selected.length);
+      } catch (historyError) {
+        console.error('La limpieza terminó pero no se pudo guardar el historial:', historyError);
+        addToast(
+          'La limpieza se completó, pero no se pudo guardar la entrada en el historial.',
+          'warning',
+          6000
+        );
+      }
 
       addToast(
         `✓ Limpieza completada. Se liberaron ${formatBytes(bytesFreed)} de espacio.`,
