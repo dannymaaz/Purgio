@@ -1,6 +1,6 @@
 // updater.rs — Módulo de verificación de actualizaciones para Purgio
 // Consulta la API de GitHub Releases para detectar nuevas versiones.
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::process::Command;
 
 /// Información de una actualización disponible
@@ -52,8 +52,14 @@ fn is_newer_version(latest: &str, current: &str) -> bool {
     let current_parts: Vec<&str> = current_clean.split('.').collect();
 
     for i in 0..std::cmp::max(latest_parts.len(), current_parts.len()) {
-        let l_val = latest_parts.get(i).and_then(|&s| s.parse::<u32>().ok()).unwrap_or(0);
-        let c_val = current_parts.get(i).and_then(|&s| s.parse::<u32>().ok()).unwrap_or(0);
+        let l_val = latest_parts
+            .get(i)
+            .and_then(|&s| s.parse::<u32>().ok())
+            .unwrap_or(0);
+        let c_val = current_parts
+            .get(i)
+            .and_then(|&s| s.parse::<u32>().ok())
+            .unwrap_or(0);
 
         if l_val > c_val {
             return true;
@@ -72,13 +78,17 @@ pub fn check_for_updates() -> UpdateInfo {
     let mut has_update = false;
 
     // Ejecutar curl para consultar la API de GitHub
-    let curl_cmd = if cfg!(target_os = "windows") { "curl.exe" } else { "curl" };
+    let curl_cmd = if cfg!(target_os = "windows") {
+        "curl.exe"
+    } else {
+        "curl"
+    };
     let mut cmd = Command::new(curl_cmd);
-    cmd.args(&[
+    cmd.args([
         "-s",
         "-H",
         "User-Agent: Purgio",
-        "https://api.github.com/repos/dannymaaz/Purgio/releases/latest"
+        "https://api.github.com/repos/dannymaaz/Purgio/releases/latest",
     ]);
 
     #[cfg(target_os = "windows")]
