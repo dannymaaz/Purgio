@@ -329,6 +329,68 @@ pub fn scan_system_files() -> Vec<CleanableItem> {
                 }
             }
         }
+
+        // Volcados de errores del sistema. Son útiles para diagnóstico, por eso
+        // se muestran como Review y se autorizan únicamente archivos .dmp exactos.
+        let mut dump_paths = Vec::new();
+        let mut dump_size = 0;
+
+        let memory_dump = PathBuf::from(r"C:\Windows\MEMORY.DMP");
+        if let Ok(metadata) = fs::symlink_metadata(&memory_dump) {
+            if metadata.is_file()
+                && !metadata.file_type().is_symlink()
+                && !safety::metadata_is_reparse_point(&metadata)
+                && !safety::is_path_critical(&memory_dump.to_string_lossy())
+            {
+                dump_size += metadata.len();
+                dump_paths.push(memory_dump.to_string_lossy().to_string());
+            }
+        }
+
+        let minidump_dir = PathBuf::from(r"C:\Windows\Minidump");
+        if let Ok(entries) = fs::read_dir(&minidump_dir) {
+            for entry in entries.flatten() {
+                let entry_path = entry.path();
+                let is_dump = entry_path
+                    .extension()
+                    .and_then(|extension| extension.to_str())
+                    .map(|extension| extension.eq_ignore_ascii_case("dmp"))
+                    .unwrap_or(false);
+                if !is_dump {
+                    continue;
+                }
+
+                let metadata = match fs::symlink_metadata(&entry_path) {
+                    Ok(metadata) => metadata,
+                    Err(_) => continue,
+                };
+
+                if metadata.is_file()
+                    && !metadata.file_type().is_symlink()
+                    && !safety::metadata_is_reparse_point(&metadata)
+                    && !safety::is_path_critical(&entry_path.to_string_lossy())
+                {
+                    dump_size += metadata.len();
+                    dump_paths.push(entry_path.to_string_lossy().to_string());
+                }
+            }
+        }
+
+        dump_paths.sort();
+        dump_paths.dedup();
+        if !dump_paths.is_empty() {
+            items.push(CleanableItem::new(
+                "win_error_dumps",
+                "Volcados de Memoria de Errores de Windows",
+                dump_size,
+                dump_paths,
+                RiskLevel::Review,
+                "Archivos MEMORY.DMP y Minidump/*.dmp generados para diagnosticar fallos, bloqueos y pantallas azules.",
+                "Se eliminarán únicamente los archivos .dmp mostrados en el Cleanup Plan. Perderás información útil para investigar fallos anteriores.",
+                "Eliminar solo si no estás diagnosticando un fallo reciente.",
+                "diagnostics",
+            ));
+        }
     }
 
     #[cfg(target_os = "macos")]
@@ -539,28 +601,9 @@ pub fn scan_system_files() -> Vec<CleanableItem> {
     }
 
     // 2. Papelera de reciclaje
-    // Para simplificar, en Windows simularemos o usaremos comandos para vaciarla, pero podemos comprobar el tamaño del directorio $Recycle.Bin.
-    // Para evitar problemas de permisos leyendo $Recycle.Bin directamente, intentaremos leerlo pero si falla pondremos un tamaño mínimo simulado o 0.
-    #[cfg(target_os = "windows")]
-    {
-        let recycle_bin = "C:\\$Recycle.Bin";
-        let size = if Path::new(recycle_bin).exists() {
-            get_dir_size(recycle_bin)
-        } else {
-            0
-        };
-        items.push(CleanableItem::new(
-            "win_recycle_bin",
-            "Papelera de Reciclaje",
-            size,
-            vec![recycle_bin.to_string()],
-            RiskLevel::Safe,
-            "Contiene archivos que has eliminado pero que aún permanecen en el disco por si deseas restaurarlos.",
-            "Los archivos eliminados se borrarán de forma definitiva y no se podrán recuperar con facilidad.",
-            "Seguro de eliminar permanentemente.",
-            "trash",
-        ));
-    }
+    // Windows se omite intencionalmente aquí: borrar C:\$Recycle.Bin como una
+    // ruta normal puede abarcar contenedores pertenecientes a otros SID. La
+    // funcionalidad volverá únicamente mediante SHQueryRecycleBin/SHEmptyRecycleBin.
 
     #[cfg(target_os = "macos")]
     {
