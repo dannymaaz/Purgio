@@ -1,166 +1,316 @@
+use serde::Serialize;
 use std::fs;
 use std::path::Path;
 
 use crate::safety;
 
-/// Elimina de forma segura el contenido de un archivo o directorio.
-/// Si es un directorio, limpia los elementos que contiene de forma recursiva
-/// sin eliminar la carpeta raíz en sí.
-pub fn clean_path_safely(path_str: &str, _is_sensitive: bool) -> Result<u64, String> {
-    let validated_path = safety::validate_cleanup_target(path_str)?;
-
-    if !validated_path.exists() {
-        return Ok(0);
-    }
-
-    let mut bytes_freed = 0;
-
-    if validated_path.is_file() {
-        let metadata = fs::symlink_metadata(&validated_path)
-            .map_err(|e| format!("No se pudo leer el archivo {}: {}", path_str, e))?;
-
-        if safety::metadata_is_reparse_point(&metadata) {
-            return Err(format!(
-                "Acción bloqueada: el archivo es un reparse point o junction: {}",
-                path_str
-            ));
-        }
-
-        if metadata.file_type().is_symlink() {
-            return Err(format!(
-                "Acción bloqueada: el archivo es un enlace simbólico: {}",
-                path_str
-            ));
-        }
-
-        let size = metadata.len();
-        fs::remove_file(&validated_path)
-            .map_err(|e| format!("No se pudo eliminar el archivo {}: {}", path_str, e))?;
-        bytes_freed += size;
-    } else if validated_path.is_dir() {
-        let entries = fs::read_dir(&validated_path)
-            .map_err(|e| format!("No se pudo leer el directorio {}: {}", path_str, e))?;
-
-        for entry in entries.flatten() {
-            let entry_path = entry.path();
-            let entry_path_str = entry_path.to_string_lossy().to_string();
-
-            if safety::is_path_critical(&entry_path_str) {
-                continue;
-            }
-
-            let metadata = match fs::symlink_metadata(&entry_path) {
-                Ok(metadata) => metadata,
-                Err(_) => continue,
-            };
-
-            // En Windows nunca atravesar ni modificar junctions/reparse points.
-            // Pueden redirigir el recorrido a otro volumen o a una ruta protegida.
-            if safety::metadata_is_reparse_point(&metadata) {
-                continue;
-            }
-
-            // En plataformas Unix tampoco seguir enlaces simbólicos. Se elimina
-            // únicamente el enlace en sí, no su destino.
-            if metadata.file_type().is_symlink() {
-                let _ = if metadata.is_dir() {
-                    fs::remove_dir(&entry_path)
-                } else {
-                    fs::remove_file(&entry_path)
-                };
-                continue;
-            }
-
-            if entry_path.is_file() {
-                let size = metadata.len();
-                if fs::remove_file(&entry_path).is_ok() {
-                    bytes_freed += size;
-                }
-            } else if entry_path.is_dir() {
-                bytes_freed += remove_dir_recursive_safely(&entry_path);
-            }
-        }
-    }
-
-    Ok(bytes_freed)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CleanupStatus {
+    Completed,
+    Partial,
+    Failed,
+    NoOp,
 }
 
-/// Helper recursivo que borra un directorio interno y calcula el tamaño liberado.
-/// Las rutas críticas, reparse points y enlaces simbólicos se bloquean en cada nivel.
-fn remove_dir_recursive_safely(path: &Path) -> u64 {
+#[derive(Debug, Clone, Serialize)]
+pub struct CleanupPathResult {
+    pub path: String,
+    pub bytes_freed: u64,
+    pub status: CleanupStatus,
+    pub issues: Vec<String>,
+}
+
+#[derive(Default)]
+struct TraversalReport {
+    bytes_freed: u64,
+    skipped: usize,
+    errors: Vec<String>,
+}
+
+impl TraversalReport {
+    fn absorb(&mut self, other: TraversalReport) {
+        self.bytes_freed += other.bytes_freed;
+        self.skipped += other.skipped;
+        self.errors.extend(other.errors);
+    }
+
+    fn into_path_result(self, path: String) -> CleanupPathResult {
+        let status = if !self.errors.is_empty() || self.skipped > 0 {
+            CleanupStatus::Partial
+        } else if self.bytes_freed > 0 {
+            CleanupStatus::Completed
+        } else {
+            CleanupStatus::NoOp
+        };
+
+        let mut issues = self.errors;
+        if self.skipped > 0 {
+            issues.push(format!(
+                "{} entrada(s) fueron omitidas por las protecciones de seguridad de Purgio.",
+                self.skipped
+            ));
+        }
+
+        CleanupPathResult {
+            path,
+            bytes_freed: self.bytes_freed,
+            status,
+            issues,
+        }
+    }
+}
+
+/// Ejecuta una limpieza sobre un target ya autorizado por el catálogo de Rust y
+/// devuelve un resultado estructurado. La ruta visible en el resultado siempre es
+/// la ruta reconstruida por el backend, nunca una ruta suministrada por React.
+pub fn clean_path_with_report(path_str: &str, _is_sensitive: bool) -> CleanupPathResult {
+    let validated_path = match safety::validate_cleanup_target(path_str) {
+        Ok(path) => path,
+        Err(error) => {
+            return CleanupPathResult {
+                path: path_str.to_string(),
+                bytes_freed: 0,
+                status: CleanupStatus::Failed,
+                issues: vec![error],
+            };
+        }
+    };
+
+    if !validated_path.exists() {
+        return CleanupPathResult {
+            path: path_str.to_string(),
+            bytes_freed: 0,
+            status: CleanupStatus::NoOp,
+            issues: Vec::new(),
+        };
+    }
+
+    let metadata = match fs::symlink_metadata(&validated_path) {
+        Ok(metadata) => metadata,
+        Err(error) => {
+            return CleanupPathResult {
+                path: path_str.to_string(),
+                bytes_freed: 0,
+                status: CleanupStatus::Failed,
+                issues: vec![format!("No se pudo leer el target autorizado: {error}")],
+            };
+        }
+    };
+
+    if safety::metadata_is_reparse_point(&metadata) {
+        return CleanupPathResult {
+            path: path_str.to_string(),
+            bytes_freed: 0,
+            status: CleanupStatus::Failed,
+            issues: vec!["Acción bloqueada: el target es un reparse point o junction.".to_string()],
+        };
+    }
+
+    if metadata.file_type().is_symlink() {
+        return CleanupPathResult {
+            path: path_str.to_string(),
+            bytes_freed: 0,
+            status: CleanupStatus::Failed,
+            issues: vec!["Acción bloqueada: el target es un enlace simbólico.".to_string()],
+        };
+    }
+
+    if metadata.is_file() {
+        let size = metadata.len();
+        return match fs::remove_file(&validated_path) {
+            Ok(()) => CleanupPathResult {
+                path: path_str.to_string(),
+                bytes_freed: size,
+                status: CleanupStatus::Completed,
+                issues: Vec::new(),
+            },
+            Err(error) => CleanupPathResult {
+                path: path_str.to_string(),
+                bytes_freed: 0,
+                status: CleanupStatus::Failed,
+                issues: vec![format!("No se pudo eliminar el archivo autorizado: {error}")],
+            },
+        };
+    }
+
+    if metadata.is_dir() {
+        return clean_directory(&validated_path, false).into_path_result(path_str.to_string());
+    }
+
+    CleanupPathResult {
+        path: path_str.to_string(),
+        bytes_freed: 0,
+        status: CleanupStatus::NoOp,
+        issues: Vec::new(),
+    }
+}
+
+/// Limpia el contenido de un directorio sin seguir reparse points ni symlinks.
+/// `remove_root` solo se usa para directorios internos descubiertos durante el
+/// recorrido; la carpeta raíz autorizada por el catálogo se conserva.
+fn clean_directory(path: &Path, remove_root: bool) -> TraversalReport {
+    let mut report = TraversalReport::default();
     let path_str = path.to_string_lossy().to_string();
+
     if safety::is_path_critical(&path_str) {
-        return 0;
+        report.skipped += 1;
+        return report;
     }
 
     let metadata = match fs::symlink_metadata(path) {
         Ok(metadata) => metadata,
-        Err(_) => return 0,
+        Err(error) => {
+            report
+                .errors
+                .push(format!("No se pudo inspeccionar un directorio autorizado: {error}"));
+            return report;
+        }
     };
 
     if safety::metadata_is_reparse_point(&metadata) {
-        return 0;
+        report.skipped += 1;
+        return report;
     }
 
     if metadata.file_type().is_symlink() {
-        let _ = if metadata.is_dir() {
-            fs::remove_dir(path)
-        } else {
-            fs::remove_file(path)
-        };
-        return 0;
+        #[cfg(target_os = "windows")]
+        {
+            report.skipped += 1;
+        }
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            if let Err(error) = fs::remove_file(path) {
+                report
+                    .errors
+                    .push(format!("No se pudo retirar un enlace simbólico: {error}"));
+            }
+        }
+        return report;
     }
 
-    // Vuelve a comprobar la ruta canonicalizada para evitar escapes mediante
-    // componentes especiales o targets que hayan cambiado entre escaneo y borrado.
     let canonical = match fs::canonicalize(path) {
         Ok(canonical) => canonical,
-        Err(_) => return 0,
+        Err(error) => {
+            report
+                .errors
+                .push(format!("No se pudo canonicalizar un directorio autorizado: {error}"));
+            return report;
+        }
     };
+
     if safety::is_path_critical(&canonical.to_string_lossy()) {
-        return 0;
+        report.skipped += 1;
+        return report;
     }
 
-    let mut bytes_freed = 0;
+    let entries = match fs::read_dir(path) {
+        Ok(entries) => entries,
+        Err(error) => {
+            report
+                .errors
+                .push(format!("No se pudo leer un directorio autorizado: {error}"));
+            return report;
+        }
+    };
 
-    if let Ok(entries) = fs::read_dir(path) {
-        for entry in entries.flatten() {
-            let sub_path = entry.path();
-            let sub_path_str = sub_path.to_string_lossy().to_string();
-
-            if safety::is_path_critical(&sub_path_str) {
+    for entry in entries {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(error) => {
+                report
+                    .errors
+                    .push(format!("No se pudo leer una entrada del directorio: {error}"));
                 continue;
             }
+        };
 
-            let sub_metadata = match fs::symlink_metadata(&sub_path) {
-                Ok(metadata) => metadata,
-                Err(_) => continue,
-            };
+        let entry_path = entry.path();
+        let entry_path_str = entry_path.to_string_lossy().to_string();
 
-            if safety::metadata_is_reparse_point(&sub_metadata) {
+        if safety::is_path_critical(&entry_path_str) {
+            report.skipped += 1;
+            continue;
+        }
+
+        let entry_metadata = match fs::symlink_metadata(&entry_path) {
+            Ok(metadata) => metadata,
+            Err(error) => {
+                report
+                    .errors
+                    .push(format!("No se pudo inspeccionar una entrada autorizada: {error}"));
                 continue;
             }
+        };
 
-            if sub_metadata.file_type().is_symlink() {
-                let _ = if sub_metadata.is_dir() {
-                    fs::remove_dir(&sub_path)
-                } else {
-                    fs::remove_file(&sub_path)
-                };
-                continue;
+        if safety::metadata_is_reparse_point(&entry_metadata) {
+            report.skipped += 1;
+            continue;
+        }
+
+        if entry_metadata.file_type().is_symlink() {
+            #[cfg(target_os = "windows")]
+            {
+                report.skipped += 1;
             }
 
-            if sub_path.is_file() {
-                let size = sub_metadata.len();
-                if fs::remove_file(&sub_path).is_ok() {
-                    bytes_freed += size;
+            #[cfg(not(target_os = "windows"))]
+            {
+                if let Err(error) = fs::remove_file(&entry_path) {
+                    report
+                        .errors
+                        .push(format!("No se pudo retirar un enlace simbólico: {error}"));
                 }
-            } else if sub_path.is_dir() {
-                bytes_freed += remove_dir_recursive_safely(&sub_path);
             }
+            continue;
+        }
+
+        if entry_metadata.is_file() {
+            let size = entry_metadata.len();
+            match fs::remove_file(&entry_path) {
+                Ok(()) => report.bytes_freed += size,
+                Err(error) => report
+                    .errors
+                    .push(format!("No se pudo eliminar un archivo autorizado: {error}")),
+            }
+        } else if entry_metadata.is_dir() {
+            report.absorb(clean_directory(&entry_path, true));
         }
     }
 
-    let _ = fs::remove_dir(path);
-    bytes_freed
+    if remove_root && report.skipped == 0 && report.errors.is_empty() {
+        if let Err(error) = fs::remove_dir(path) {
+            report
+                .errors
+                .push(format!("No se pudo retirar un directorio ya vacío: {error}"));
+        }
+    }
+
+    report
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn traversal_report_marks_security_skips_as_partial() {
+        let report = TraversalReport {
+            bytes_freed: 1024,
+            skipped: 1,
+            errors: Vec::new(),
+        }
+        .into_path_result("/authorized".to_string());
+
+        assert_eq!(report.status, CleanupStatus::Partial);
+        assert_eq!(report.bytes_freed, 1024);
+        assert_eq!(report.issues.len(), 1);
+    }
+
+    #[test]
+    fn empty_successful_traversal_is_no_op() {
+        let report = TraversalReport::default().into_path_result("/authorized".to_string());
+        assert_eq!(report.status, CleanupStatus::NoOp);
+    }
 }
