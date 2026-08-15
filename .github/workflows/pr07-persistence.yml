@@ -6,6 +6,7 @@ on:
       - pr-07-i18n
     paths:
       - '.github/workflows/pr07-persistence.yml'
+      - 'scripts/pr07-persistence.py'
 
 permissions:
   contents: write
