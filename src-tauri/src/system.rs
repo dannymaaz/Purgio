@@ -1,12 +1,10 @@
-use serde::{Serialize, Deserialize};
-use sysinfo::{System, Disks, ProcessRefreshKind, RefreshKind, CpuRefreshKind};
+use serde::{Deserialize, Serialize};
 use std::sync::{Mutex, OnceLock};
+use sysinfo::{CpuRefreshKind, Disks, ProcessRefreshKind, RefreshKind, System};
 
 fn get_system_instance() -> &'static Mutex<System> {
     static SYSTEM: OnceLock<Mutex<System>> = OnceLock::new();
-    SYSTEM.get_or_init(|| {
-        Mutex::new(System::new())
-    })
+    SYSTEM.get_or_init(|| Mutex::new(System::new()))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -14,7 +12,7 @@ pub struct ProcessItem {
     pub pid: u32,
     pub name: String,
     pub memory_usage: u64, // En bytes (NOTA: el frontend lo llama memory_usage, no ram_usage)
-    pub cpu_usage: f32, // En porcentaje (0-100)
+    pub cpu_usage: f32,   // En porcentaje (0-100)
     pub description: String,
     pub warning: Option<String>,
     pub is_safe_to_kill: bool, // el frontend espera is_safe_to_kill
@@ -38,7 +36,7 @@ pub struct SystemStats {
 /// Obtiene metadatos para procesos en segundo plano comunes
 fn get_process_metadata(name: &str) -> (String, Option<String>, bool) {
     let name_lower = name.to_lowercase();
-    
+
     // Apps seguras de cerrar en segundo plano
     let safe_processes = [
         ("spotify", "Proceso auxiliar de Spotify para la interfaz y reproducción.", "Spotify se cerrará por completo.", true),
@@ -74,7 +72,7 @@ fn get_process_metadata(name: &str) -> (String, Option<String>, bool) {
         ("outlook", "Microsoft Outlook.", "El correo se cerrará.", true),
         ("word", "Microsoft Word.", "Word se cerrará, guarda tu trabajo.", true),
         ("excel", "Microsoft Excel.", "Excel se cerrará, guarda tu trabajo.", true),
-        ("powerpoint", "Microsoft PowerPoint.", "PowerPoint se cerrará.", true),
+        ("powerpoint", "Microsoft PowerPoint.", "PowerPoint se cerrará, guarda tu trabajo.", true),
         ("postgres", "PostgreSQL - Base de datos relacional. Probablemente instalada como dependencia de otra app.", "El servicio de base de datos se detendrá. Apps que lo usen dejarán de funcionar hasta reiniciarlo.", true),
         ("mysqld", "MySQL/MariaDB - Servidor de base de datos.", "El servicio MySQL se detendrá. Puede afectar apps que dependan de él.", true),
         ("mongod", "MongoDB - Base de datos NoSQL en segundo plano.", "MongoDB se detendrá. Las apps que lo usen perderán la conexión.", true),
@@ -85,9 +83,9 @@ fn get_process_metadata(name: &str) -> (String, Option<String>, bool) {
     // Procesos críticos del sistema que NUNCA se deben cerrar
     let critical_processes = [
         "explorer", "taskmgr", "lsass", "services", "wininit", "csrss", "smss", "svchost",
-        "system", "spoolsv", "alg", "winlogon", "ctfmon", "securityhealthservice",
-        "systemd", "dbus", "init", "bash", "sh", "zsh", "fish", "powershell", "cmd",
-        "conhost", "dwm", "fontd", "launchd", "kernel", "cron", "syslogd", "udevd"
+        "system", "spoolsv", "alg", "winlogon", "ctfmon", "securityhealthservice", "systemd",
+        "dbus", "init", "bash", "sh", "zsh", "fish", "powershell", "cmd", "conhost", "dwm",
+        "fontd", "launchd", "kernel", "cron", "syslogd", "udevd",
     ];
 
     // Comprobar si es crítico
@@ -96,7 +94,7 @@ fn get_process_metadata(name: &str) -> (String, Option<String>, bool) {
             return (
                 "Proceso del sistema operativo esencial.".to_string(),
                 Some("NO CERRAR: El cierre de este proceso puede causar inestabilidad en el sistema operativo o pantalla azul.".to_string()),
-                false
+                false,
             );
         }
     }
@@ -112,7 +110,7 @@ fn get_process_metadata(name: &str) -> (String, Option<String>, bool) {
     (
         "Proceso de aplicación de usuario.".to_string(),
         Some("El programa correspondiente se cerrará y podría perder datos no guardados.".to_string()),
-        true
+        true,
     )
 }
 
@@ -164,7 +162,7 @@ pub fn get_background_apps() -> Vec<ProcessItem> {
     }
 
     // Ordenar de mayor a menor consumo de RAM
-    items.sort_by(|a, b| b.memory_usage.cmp(&a.memory_usage));
+    items.sort_by_key(|item| std::cmp::Reverse(item.memory_usage));
 
     items
 }
@@ -172,14 +170,13 @@ pub fn get_background_apps() -> Vec<ProcessItem> {
 /// Cierra un proceso por su PID
 pub fn kill_process(pid: u32) -> Result<(), String> {
     // Solo refrescar lo mínimo para encontrar el proceso
-    let refresh_kind = RefreshKind::new()
-        .with_processes(ProcessRefreshKind::new());
+    let refresh_kind = RefreshKind::new().with_processes(ProcessRefreshKind::new());
     let mut sys = System::new_with_specifics(refresh_kind);
     sys.refresh_all();
 
     let pid_type = sysinfo::Pid::from(pid as usize);
     if let Some(process) = sys.process(pid_type) {
-        let (_, _, safe) = get_process_metadata(&process.name().to_string());
+        let (_, _, safe) = get_process_metadata(process.name());
         if !safe {
             return Err("Acción denegada: Este proceso es de vital importancia para el sistema.".to_string());
         }
@@ -191,7 +188,8 @@ pub fn kill_process(pid: u32) -> Result<(), String> {
             {
                 use std::os::windows::process::CommandExt;
                 let mut cmd = std::process::Command::new("taskkill");
-                cmd.args(&["/F", "/PID", &pid.to_string()]);
+                let pid_string = pid.to_string();
+                cmd.args(["/F", "/PID", &pid_string]);
                 cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
                 if let Ok(output) = cmd.output() {
                     if output.status.success() {
@@ -202,7 +200,7 @@ pub fn kill_process(pid: u32) -> Result<(), String> {
             #[cfg(not(target_os = "windows"))]
             {
                 if let Ok(output) = std::process::Command::new("kill")
-                    .args(&["-9", &pid.to_string()])
+                    .args(["-9", &pid.to_string()])
                     .output()
                 {
                     if output.status.success() {
@@ -219,8 +217,7 @@ pub fn kill_process(pid: u32) -> Result<(), String> {
 
 /// Cierra TODOS los procesos que tengan el nombre dado (para manejar multi-proceso de browsers)
 pub fn kill_process_group(name: &str) -> Result<usize, String> {
-    let refresh_kind = RefreshKind::new()
-        .with_processes(ProcessRefreshKind::new());
+    let refresh_kind = RefreshKind::new().with_processes(ProcessRefreshKind::new());
     let mut sys = System::new_with_specifics(refresh_kind);
     sys.refresh_all();
 
@@ -228,7 +225,8 @@ pub fn kill_process_group(name: &str) -> Result<usize, String> {
     let mut killed = 0;
     let mut errors = Vec::new();
 
-    let pids_to_kill: Vec<u32> = sys.processes()
+    let pids_to_kill: Vec<u32> = sys
+        .processes()
         .iter()
         .filter(|(_, p)| p.name().to_string().to_lowercase() == name_lower)
         .map(|(pid, _)| pid.as_u32())
@@ -294,4 +292,3 @@ pub fn get_system_stats() -> SystemStats {
         cpu_name,
     }
 }
-
