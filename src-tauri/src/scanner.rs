@@ -60,7 +60,7 @@ pub fn get_dir_size<P: AsRef<Path>>(path: P) -> u64 {
         }
 
         let path_str = path.to_string_lossy();
-        if safety::is_path_critical(&path_str) {
+        if safety::is_path_critical(&path_str) || safety::has_windows_reparse_ancestor(path) {
             return 0;
         }
 
@@ -240,6 +240,7 @@ pub fn scan_system_files() -> Vec<CleanableItem> {
 
                         if safety::metadata_is_reparse_point(&metadata)
                             || metadata.file_type().is_symlink()
+                            || safety::has_windows_reparse_ancestor(&entry_path)
                             || !metadata.is_file()
                         {
                             continue;
@@ -301,6 +302,7 @@ pub fn scan_system_files() -> Vec<CleanableItem> {
                     if metadata.is_file()
                         && !metadata.file_type().is_symlink()
                         && !safety::metadata_is_reparse_point(&metadata)
+                        && !safety::has_windows_reparse_ancestor(&entry_path)
                         && !safety::is_path_critical(&entry_path.to_string_lossy())
                     {
                         crash_dump_size += metadata.len();
@@ -336,6 +338,7 @@ pub fn scan_system_files() -> Vec<CleanableItem> {
             if metadata.is_file()
                 && !metadata.file_type().is_symlink()
                 && !safety::metadata_is_reparse_point(&metadata)
+                && !safety::has_windows_reparse_ancestor(&memory_dump)
                 && !safety::is_path_critical(&memory_dump.to_string_lossy())
             {
                 dump_size += metadata.len();
