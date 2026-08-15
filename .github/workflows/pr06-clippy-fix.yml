@@ -1,0 +1,32 @@
+name: "PR-06 Clippy test fix"
+
+on:
+  push:
+    branches:
+      - agent/pr-06-persisted-settings
+    paths:
+      - '.github/workflows/pr06-clippy-fix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: "Checkout"
+        uses: actions/checkout@v7
+        with:
+          ref: agent/pr-06-persisted-settings
+
+      - name: "Apply Clippy fix"
+        run: python scripts/pr06-clippy-fix.py
+
+      - name: "Commit patch"
+        run: |
+          git rm .github/workflows/pr06-clippy-fix.yml scripts/pr06-clippy-fix.py
+          git config user.name "Danny Maaz"
+          git config user.email "61290346+dannymaaz@users.noreply.github.com"
+          git add src-tauri/src/persistence.rs
+          git commit -m "Fix strict Clippy findings in persistence tests"
+          git push origin HEAD:agent/pr-06-persisted-settings
