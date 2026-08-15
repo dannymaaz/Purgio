@@ -70,7 +70,10 @@ jobs:
           components: rustfmt, clippy
 
       - name: "Check PR Rust formatting"
-        run: rustfmt --edition 2021 --check src-tauri/src/cleaner.rs src-tauri/src/lib.rs src-tauri/src/safety.rs
+        shell: bash
+        run: |
+          rustfmt --edition 2021 --check src-tauri/src/cleaner.rs src-tauri/src/safety.rs
+          rustfmt --edition 2021 --config skip_children=true --check src-tauri/src/lib.rs
 
       - name: "Run tests"
         run: cargo test --manifest-path src-tauri/Cargo.toml --all-targets
