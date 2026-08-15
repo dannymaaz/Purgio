@@ -51,7 +51,11 @@ pub fn is_path_critical(path_str: &str) -> bool {
             return true;
         }
 
-        if path_str == "/" || path_str == "/System" || path_str == "/Library" || path_str == "/Users" {
+        if path_str == "/"
+            || path_str == "/System"
+            || path_str == "/Library"
+            || path_str == "/Users"
+        {
             return true;
         }
     }
@@ -97,11 +101,17 @@ pub fn validate_cleanup_target(path_str: &str) -> Result<PathBuf, String> {
 
     let path = Path::new(path_str);
     if !path.is_absolute() {
-        return Err(format!("Acción bloqueada: la ruta debe ser absoluta: {}", path_str));
+        return Err(format!(
+            "Acción bloqueada: la ruta debe ser absoluta: {}",
+            path_str
+        ));
     }
 
     if is_path_critical(path_str) {
-        return Err(format!("Acción bloqueada: {} es una ruta crítica del sistema operativo.", path_str));
+        return Err(format!(
+            "Acción bloqueada: {} es una ruta crítica del sistema operativo.",
+            path_str
+        ));
     }
 
     if !path.exists() {
@@ -112,7 +122,10 @@ pub fn validate_cleanup_target(path_str: &str) -> Result<PathBuf, String> {
         .map_err(|e| format!("No se pudo validar la ruta {}: {}", path_str, e))?;
 
     if metadata.file_type().is_symlink() {
-        return Err(format!("Acción bloqueada: el objetivo es un enlace simbólico: {}", path_str));
+        return Err(format!(
+            "Acción bloqueada: el objetivo es un enlace simbólico: {}",
+            path_str
+        ));
     }
 
     let canonical = fs::canonicalize(path)
