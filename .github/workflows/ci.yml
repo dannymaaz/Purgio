@@ -23,47 +23,75 @@ concurrency:
 
 jobs:
   frontend:
-    name: "Frontend build"
+    name: "Frontend quality"
     runs-on: ubuntu-22.04
     timeout-minutes: 15
+
     steps:
       - name: "Checkout"
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: "Setup Node.js"
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
 
       - name: "Install dependencies"
         run: npm ci
 
+      - name: "Audit production dependencies"
+        run: npm audit --omit=dev --audit-level=high
+
       - name: "Build frontend"
         run: npm run build
 
   rust-windows:
-    name: "Rust checks (Windows)"
+    name: "Rust strict checks (Windows)"
     runs-on: windows-latest
     timeout-minutes: 30
 
     steps:
       - name: "Checkout"
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: "Setup Rust"
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
 
-      - name: "Check PR Rust formatting"
-        shell: bash
-        run: |
-          rustfmt --edition 2021 --check src-tauri/src/cleaner.rs src-tauri/src/safety.rs
-          rustfmt --edition 2021 --config skip_children=true --check src-tauri/src/lib.rs
+      - name: "Check Rust formatting"
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
 
       - name: "Run tests"
         run: cargo test --manifest-path src-tauri/Cargo.toml --all-targets
 
-      - name: "Run Clippy"
-        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features
+      - name: "Run strict Clippy"
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings
+
+  windows-package:
+    name: "Windows NSIS package"
+    runs-on: windows-latest
+    needs:
+      - frontend
+      - rust-windows
+    timeout-minutes: 30
+
+    steps:
+      - name: "Checkout"
+        uses: actions/checkout@v7
+
+      - name: "Setup Node.js"
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: "Setup Rust"
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: "Install dependencies"
+        run: npm ci
+
+      - name: "Build NSIS installer"
+        run: npm run tauri -- build --bundles nsis
