@@ -85,7 +85,7 @@ jobs:
               file.write("\n")
           PY
 
-      - name: "Compilar y publicar en GitHub Releases"
+      - name: "Compilar artefactos firmados"
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -95,6 +95,19 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: "Purgio ${{ github.ref_name }}"
           releaseBody: "Vea el CHANGELOG.md para obtener detalles de los cambios en esta versión."
-          releaseDraft: false
+          releaseDraft: true
           prerelease: false
           args: "${{ matrix.args }} --config src-tauri/tauri.release.conf.json"
+
+  publish-release:
+    name: "Publicar release completa"
+    needs:
+      - publish-tauri
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+
+    steps:
+      - name: "Publicar draft después de validar todas las plataformas"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "$GITHUB_REF_NAME" --draft=false --repo "$GITHUB_REPOSITORY"
