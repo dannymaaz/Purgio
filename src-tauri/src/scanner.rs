@@ -20,6 +20,10 @@ pub struct CleanableItem {
 
 // Implementación auxiliar para convertir tipos de String más limpios
 impl CleanableItem {
+    // Este constructor refleja deliberadamente el registro serializado completo de
+    // una acción de limpieza. Mantener los campos explícitos hace auditables los
+    // call sites; migrarlo a builder se hará como refactor independiente.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: &str,
         name: &str,

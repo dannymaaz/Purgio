@@ -19,6 +19,13 @@ pub fn clean_path_safely(path_str: &str, _is_sensitive: bool) -> Result<u64, Str
         let metadata = fs::symlink_metadata(&validated_path)
             .map_err(|e| format!("No se pudo leer el archivo {}: {}", path_str, e))?;
 
+        if safety::metadata_is_reparse_point(&metadata) {
+            return Err(format!(
+                "Acción bloqueada: el archivo es un reparse point o junction: {}",
+                path_str
+            ));
+        }
+
         if metadata.file_type().is_symlink() {
             return Err(format!(
                 "Acción bloqueada: el archivo es un enlace simbólico: {}",
@@ -47,8 +54,14 @@ pub fn clean_path_safely(path_str: &str, _is_sensitive: bool) -> Result<u64, Str
                 Err(_) => continue,
             };
 
-            // Nunca seguir enlaces simbólicos dentro de una carpeta limpiable.
-            // Se elimina únicamente el enlace en sí, no su destino.
+            // En Windows nunca atravesar ni modificar junctions/reparse points.
+            // Pueden redirigir el recorrido a otro volumen o a una ruta protegida.
+            if safety::metadata_is_reparse_point(&metadata) {
+                continue;
+            }
+
+            // En plataformas Unix tampoco seguir enlaces simbólicos. Se elimina
+            // únicamente el enlace en sí, no su destino.
             if metadata.file_type().is_symlink() {
                 let _ = if metadata.is_dir() {
                     fs::remove_dir(&entry_path)
@@ -73,7 +86,7 @@ pub fn clean_path_safely(path_str: &str, _is_sensitive: bool) -> Result<u64, Str
 }
 
 /// Helper recursivo que borra un directorio interno y calcula el tamaño liberado.
-/// Las rutas críticas y enlaces simbólicos se bloquean en cada nivel del árbol.
+/// Las rutas críticas, reparse points y enlaces simbólicos se bloquean en cada nivel.
 fn remove_dir_recursive_safely(path: &Path) -> u64 {
     let path_str = path.to_string_lossy().to_string();
     if safety::is_path_critical(&path_str) {
@@ -84,6 +97,10 @@ fn remove_dir_recursive_safely(path: &Path) -> u64 {
         Ok(metadata) => metadata,
         Err(_) => return 0,
     };
+
+    if safety::metadata_is_reparse_point(&metadata) {
+        return 0;
+    }
 
     if metadata.file_type().is_symlink() {
         let _ = if metadata.is_dir() {
@@ -119,6 +136,10 @@ fn remove_dir_recursive_safely(path: &Path) -> u64 {
                 Ok(metadata) => metadata,
                 Err(_) => continue,
             };
+
+            if safety::metadata_is_reparse_point(&sub_metadata) {
+                continue;
+            }
 
             if sub_metadata.file_type().is_symlink() {
                 let _ = if sub_metadata.is_dir() {
