@@ -1,0 +1,187 @@
+name: "PR-06 wire persisted settings"
+
+on:
+  push:
+    branches:
+      - agent/pr-06-persisted-settings
+    paths:
+      - '.github/workflows/pr06-wire-persistence.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  wire:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: "Checkout"
+        uses: actions/checkout@v7
+        with:
+          ref: agent/pr-06-persisted-settings
+
+      - name: "Wire persisted state into App"
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/App.tsx')
+          text = path.read_text(encoding='utf-8')
+
+          text = text.replace(
+              "import { addHistoryEntry } from './utils/history';",
+              "import { addHistoryEntry, clearLegacyHistory, readLegacyHistory } from './utils/history';",
+          )
+
+          marker = """interface UpdateInfo {
+            latest_version: string;
+            current_version: string;
+            has_update: boolean;
+            download_url: string;
+            changelog: string;
+          }
+          """
+          addition = marker + """
+          interface AppPreferences {
+            theme: 'dark' | 'light' | 'system';
+            language: 'es' | 'en';
+            confirm_delete: boolean;
+            confirm_disable: boolean;
+            show_sensitive: boolean;
+          }
+
+          interface PersistedState {
+            schema_version: number;
+            legacy_migration_completed: boolean;
+            preferences: AppPreferences;
+          }
+          """
+          if marker not in text:
+              raise SystemExit('UpdateInfo marker not found')
+          text = text.replace(marker, addition, 1)
+
+          old_settings = """  // Ajustes y Configuración
+            const [theme, setTheme] = useState<'dark' | 'light' | 'system'>(() => {
+              const saved = localStorage.getItem('purgio-theme');
+              return (saved as any) || 'system';
+            });
+            const [lang, setLang] = useState<'es' | 'en'>('es');
+            const [confirmDelete, setConfirmDelete] = useState<boolean>(true);
+            const [confirmDisable, setConfirmDisable] = useState<boolean>(true);
+            const [showSensitive, setShowSensitive] = useState<boolean>(false);
+          """
+          new_settings = """  // Ajustes y Configuración — defaults seguros hasta hidratar app_config_dir.
+            const [theme, setTheme] = useState<'dark' | 'light' | 'system'>('system');
+            const [lang, setLang] = useState<'es' | 'en'>('es');
+            const [confirmDelete, setConfirmDelete] = useState<boolean>(true);
+            const [confirmDisable, setConfirmDisable] = useState<boolean>(true);
+            const [showSensitive, setShowSensitive] = useState<boolean>(false);
+            const [settingsHydrated, setSettingsHydrated] = useState<boolean>(false);
+          """
+          if old_settings not in text:
+              raise SystemExit('settings block not found')
+          text = text.replace(old_settings, new_settings, 1)
+
+          toast_marker = """  // Toast notifications
+            const { toasts, addToast, removeToast } = useToast();
+          """
+          hydration = toast_marker + """
+
+            // Cargar configuración persistente desde app_config_dir. localStorage se usa
+            // exclusivamente como fuente legacy para una única migración.
+            useEffect(() => {
+              let cancelled = false;
+
+              const hydrateSettings = async () => {
+                try {
+                  let state = await invoke<PersistedState>('load_app_state');
+
+                  if (!state.legacy_migration_completed) {
+                    const legacyTheme = localStorage.getItem('purgio-theme');
+                    const legacyHistory = readLegacyHistory();
+                    state = await invoke<PersistedState>('migrate_legacy_state', {
+                      legacy: {
+                        theme: legacyTheme,
+                        history: legacyHistory,
+                      },
+                    });
+                  }
+
+                  // Una vez que Rust confirma el estado, los datos del WebView dejan de ser
+                  // necesarios y no pueden volver a sobrescribir app_config_dir.
+                  localStorage.removeItem('purgio-theme');
+                  clearLegacyHistory();
+
+                  if (cancelled) return;
+                  setTheme(state.preferences.theme);
+                  setLang(state.preferences.language);
+                  setConfirmDelete(state.preferences.confirm_delete);
+                  setConfirmDisable(state.preferences.confirm_disable);
+                  setShowSensitive(state.preferences.show_sensitive);
+                  setSettingsHydrated(true);
+                } catch (error) {
+                  console.error('Error al cargar la configuración persistente:', error);
+                  if (!cancelled) {
+                    addToast('No se pudo cargar la configuración guardada; se mantienen valores seguros sin sobrescribir el archivo.', 'error', 7000);
+                  }
+                }
+              };
+
+              hydrateSettings();
+              return () => {
+                cancelled = true;
+              };
+            }, []);
+
+            // Persistir cambios solo después de una hidratación correcta, evitando que los
+            // defaults del primer render sobrescriban preferencias existentes.
+            useEffect(() => {
+              if (!settingsHydrated) return;
+
+              const timer = window.setTimeout(() => {
+                invoke('save_preferences', {
+                  preferences: {
+                    theme,
+                    language: lang,
+                    confirm_delete: confirmDelete,
+                    confirm_disable: confirmDisable,
+                    show_sensitive: showSensitive,
+                  },
+                }).catch((error) => {
+                  console.error('Error al guardar la configuración:', error);
+                  addToast('No se pudieron guardar los cambios de configuración.', 'error', 5000);
+                });
+              }, 150);
+
+              return () => window.clearTimeout(timer);
+            }, [settingsHydrated, theme, lang, confirmDelete, confirmDisable, showSensitive]);
+          """
+          if toast_marker not in text:
+              raise SystemExit('toast marker not found')
+          text = text.replace(toast_marker, hydration, 1)
+
+          text = text.replace(
+              "  // Tema de Color Dinámico — se guarda siempre, incluso al elegir 'system'\n",
+              "  // Tema de Color Dinámico — la persistencia se gestiona en app_config_dir.\n",
+              1,
+          )
+          text = text.replace(
+              "    // Siempre persistir la elección del usuario\n    localStorage.setItem('purgio-theme', theme);\n\n",
+              "",
+              1,
+          )
+          text = text.replace(
+              "      addHistoryEntry(bytesFreed, selected.length);",
+              "      await addHistoryEntry(bytesFreed, selected.length);",
+              1,
+          )
+
+          path.write_text(text, encoding='utf-8')
+          PY
+
+          git rm .github/workflows/pr06-wire-persistence.yml
+          git config user.name "Danny Maaz"
+          git config user.email "61290346+dannymaaz@users.noreply.github.com"
+          git add src/App.tsx
+          git commit -m "Persist application settings outside the WebView"
+          git push origin HEAD:agent/pr-06-persisted-settings
