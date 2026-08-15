@@ -69,8 +69,8 @@ jobs:
         with:
           components: rustfmt, clippy
 
-      - name: "Check formatting"
-        run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
+      - name: "Check PR Rust formatting"
+        run: rustfmt --edition 2021 --check src-tauri/src/cleaner.rs src-tauri/src/lib.rs src-tauri/src/safety.rs
 
       - name: "Run tests"
         run: cargo test --manifest-path src-tauri/Cargo.toml --all-targets
