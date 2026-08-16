@@ -17,6 +17,7 @@ interface ComponentStoreAnalysis {
 
 interface ComponentStoreResult {
   success: boolean;
+  cleanup_completed: boolean;
   requires_elevation: boolean;
   exit_code?: number | null;
   message: string;
@@ -39,7 +40,7 @@ export const ComponentStorePanel: React.FC = () => {
     try {
       setResult(await invoke<ComponentStoreResult>('analyze_component_store'));
     } catch (error) {
-      setResult({ success: false, requires_elevation: false, message: String(error), analysis: null, stdout: '', stderr: '' });
+      setResult({ success: false, cleanup_completed: false, requires_elevation: false, message: String(error), analysis: null, stdout: '', stderr: '' });
     } finally {
       setBusy(null);
     }
@@ -52,7 +53,7 @@ export const ComponentStorePanel: React.FC = () => {
       setResult(await invoke<ComponentStoreResult>('start_component_cleanup'));
       setConfirmed(false);
     } catch (error) {
-      setResult({ success: false, requires_elevation: false, message: String(error), analysis: null, stdout: '', stderr: '' });
+      setResult({ success: false, cleanup_completed: false, requires_elevation: false, message: String(error), analysis: null, stdout: '', stderr: '' });
     } finally {
       setBusy(null);
     }
@@ -116,7 +117,20 @@ export const ComponentStorePanel: React.FC = () => {
         </div>
       )}
 
-      {result && !result.success && !result.requires_elevation && (
+      {result?.cleanup_completed && result.success && (
+        <div style={{ marginTop: '14px', padding: '12px', borderRadius: '8px', background: 'var(--success-bg)', color: 'var(--success)', fontSize: '13px' }}>
+          {t('Limpieza estándar completada y Component Store reanalizado.')}
+        </div>
+      )}
+
+      {result?.cleanup_completed && !result.success && (
+        <div style={{ marginTop: '14px', padding: '12px', borderRadius: '8px', background: 'var(--warning-bg)', color: 'var(--warning)', fontSize: '13px' }}>
+          <strong>{t('La limpieza estándar terminó, pero Purgio no pudo reanalizar el Component Store. La limpieza ya se ejecutó; revisa la salida de DISM antes de volver a intentarlo.')}</strong>
+          {result.exit_code !== null && result.exit_code !== undefined && <div style={{ marginTop: '4px' }}>{t('Código de salida')}: {result.exit_code}</div>}
+        </div>
+      )}
+
+      {result && !result.success && !result.requires_elevation && !result.cleanup_completed && (
         <div style={{ marginTop: '14px', padding: '12px', borderRadius: '8px', background: 'var(--danger-bg)', color: 'var(--danger)', fontSize: '13px' }}>
           <strong>{t('DISM no pudo completar la operación.')}</strong>
           <div style={{ marginTop: '4px' }}>{result.message}</div>

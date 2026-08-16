@@ -292,6 +292,8 @@ const EN_MESSAGES = {
   'Limpiando Component Store...': 'Cleaning Component Store...',
   'Ejecutar limpieza estándar de Windows': 'Run standard Windows cleanup',
   'DISM no pudo completar la operación.': 'DISM could not complete the operation.',
+  'Limpieza estándar completada y Component Store reanalizado.': 'Standard cleanup completed and the Component Store was analyzed again.',
+  'La limpieza estándar terminó, pero Purgio no pudo reanalizar el Component Store. La limpieza ya se ejecutó; revisa la salida de DISM antes de volver a intentarlo.': 'Standard cleanup finished, but Purgio could not analyze the Component Store again. Cleanup has already run; review the DISM output before trying again.',
   'Código de salida': 'Exit code',
   'Ver salida de diagnóstico de DISM': 'View DISM diagnostic output',
   'ResetBase no forma parte de este flujo porque impediría desinstalar actualizaciones de Windows que ya estén instaladas.': 'ResetBase is not part of this flow because it would prevent uninstalling Windows updates that are already installed.',

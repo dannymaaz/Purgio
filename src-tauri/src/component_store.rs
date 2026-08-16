@@ -30,6 +30,7 @@ pub struct ComponentStoreAnalysis {
 #[derive(Debug, Clone, Serialize)]
 pub struct ComponentStoreResult {
     pub success: bool,
+    pub cleanup_completed: bool,
     pub requires_elevation: bool,
     pub exit_code: Option<i32>,
     pub message: String,
@@ -112,6 +113,7 @@ fn run_dism(args: &[&str]) -> ComponentStoreResult {
 
             ComponentStoreResult {
                 success: output.status.success(),
+                cleanup_completed: false,
                 requires_elevation,
                 exit_code,
                 message: if requires_elevation {
@@ -128,6 +130,7 @@ fn run_dism(args: &[&str]) -> ComponentStoreResult {
         }
         Err(error) => ComponentStoreResult {
             success: false,
+            cleanup_completed: false,
             requires_elevation: false,
             exit_code: None,
             message: format!("DISM_SPAWN_FAILED: {}", error),
@@ -142,6 +145,7 @@ fn run_dism(args: &[&str]) -> ComponentStoreResult {
 fn run_dism(_args: &[&str]) -> ComponentStoreResult {
     ComponentStoreResult {
         success: false,
+        cleanup_completed: false,
         requires_elevation: false,
         exit_code: None,
         message: "WINDOWS_ONLY".to_string(),
@@ -172,6 +176,7 @@ pub fn start_component_cleanup() -> ComponentStoreResult {
     }
 
     let mut after = analyze_component_store();
+    after.cleanup_completed = true;
     if after.success {
         after.message = "CLEANUP_COMPLETED_AND_REANALYZED".to_string();
     } else {
