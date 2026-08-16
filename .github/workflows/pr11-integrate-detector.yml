@@ -18,6 +18,22 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
+      - name: Align helper with current App indentation
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/pr11_integrate_detector.py')
+          text = path.read_text()
+          text = text.replace("start = app.find('            <Browsers\\n')", "start = app.find('          <Browsers\\n')")
+          text = text.replace("end = app.find('            />', start)", "end = app.find('          />', start)")
+          text = text.replace("end += len('            />')", "end += len('          />')")
+          text = text.replace(
+              "block = block.replace('            />', '              chromeOnDeviceModel={chromeOnDeviceModel}\\n            />')",
+              "block = block.replace('          />', '            chromeOnDeviceModel={chromeOnDeviceModel}\\n          />')",
+          )
+          path.write_text(text)
+          PY
       - name: Apply detector integration
         run: python3 scripts/pr11_integrate_detector.py
       - name: Format detector
