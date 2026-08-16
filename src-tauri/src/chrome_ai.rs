@@ -172,6 +172,15 @@ pub fn get_chrome_on_device_model_info() -> ChromeOnDeviceModelInfo {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn test_directory(label: &str) -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after Unix epoch")
+            .as_nanos();
+        env::temp_dir().join(format!("purgio-{label}-{}-{nonce}", std::process::id()))
+    }
 
     #[test]
     fn component_version_parser_is_fail_closed() {
@@ -192,5 +201,29 @@ mod tests {
         assert_eq!(COMPONENT_ID, "fklghjjljmnfjoepjmlobpekiapffcja");
         assert_eq!(COMPONENT_DIR, "OptGuideOnDeviceModel");
         assert_eq!(MANAGEMENT_URL, "chrome://on-device-internals");
+    }
+
+    #[test]
+    fn version_directory_requires_both_chromium_files() {
+        let root = test_directory("chrome-model");
+        let version_dir = root.join("2026.8.16.1");
+        fs::create_dir_all(&version_dir).expect("test version directory should be created");
+
+        fs::write(version_dir.join("weights.bin"), b"weights")
+            .expect("test weights file should be written");
+        assert!(verify_version_dir(&version_dir).is_none());
+
+        fs::write(
+            version_dir.join("on_device_model_execution_config.pb"),
+            b"config",
+        )
+        .expect("test model config should be written");
+
+        let verified = verify_version_dir(&version_dir)
+            .expect("version with both required files should be verified");
+        assert_eq!(verified.version, "2026.8.16.1");
+        assert!(verified.size >= 13);
+
+        fs::remove_dir_all(root).expect("test directory should be removed");
     }
 }
