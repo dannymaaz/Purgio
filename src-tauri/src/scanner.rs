@@ -120,13 +120,13 @@ fn get_browser_paths() -> Vec<(String, PathBuf)> {
                 "Brave".to_string(),
                 app_data_path.join("BraveSoftware\\Brave-Browser\\User Data"),
             ));
+        }
+        if let Ok(app_data_roaming) = env::var("APPDATA") {
+            let app_data_path = PathBuf::from(app_data_roaming);
             paths.push((
                 "Opera".to_string(),
                 app_data_path.join("Opera Software\\Opera Stable"),
             ));
-        }
-        if let Ok(app_data_roaming) = env::var("APPDATA") {
-            let app_data_path = PathBuf::from(app_data_roaming);
             paths.push((
                 "Firefox".to_string(),
                 app_data_path.join("Mozilla\\Firefox\\Profiles"),
@@ -160,16 +160,32 @@ fn get_browser_paths() -> Vec<(String, PathBuf)> {
     #[cfg(target_os = "linux")]
     {
         if let Ok(home) = env::var("HOME") {
-            let home_path = PathBuf::from(home);
-            let config = home_path.join(".config");
-            paths.push(("Chrome".to_string(), config.join("google-chrome")));
+            let home_path = PathBuf::from(&home);
+            let system_config = env::var("XDG_CONFIG_HOME")
+                .map(PathBuf::from)
+                .unwrap_or_else(|_| home_path.join(".config"));
+            let chrome_config = env::var("CHROME_CONFIG_HOME")
+                .map(PathBuf::from)
+                .unwrap_or_else(|_| system_config.clone());
+
+            paths.push(("Chrome".to_string(), chrome_config.join("google-chrome")));
             paths.push((
                 "Brave".to_string(),
-                config.join("BraveSoftware/Brave-Browser"),
+                system_config.join("BraveSoftware/Brave-Browser"),
             ));
-            paths.push(("Opera".to_string(), config.join("opera")));
-            paths.push(("Firefox".to_string(), home_path.join(".mozilla/firefox")));
-            paths.push(("Chromium".to_string(), config.join("chromium")));
+            paths.push(("Opera".to_string(), system_config.join("opera")));
+
+            let legacy_firefox = home_path.join(".mozilla/firefox");
+            let xdg_firefox = system_config.join("mozilla/firefox");
+            paths.push((
+                "Firefox".to_string(),
+                if legacy_firefox.exists() {
+                    legacy_firefox
+                } else {
+                    xdg_firefox
+                },
+            ));
+            paths.push(("Chromium".to_string(), chrome_config.join("chromium")));
         }
     }
 
@@ -367,6 +383,7 @@ pub fn scan_system_files() -> Vec<CleanableItem> {
                 if metadata.is_file()
                     && !metadata.file_type().is_symlink()
                     && !safety::metadata_is_reparse_point(&metadata)
+                    && !safety::has_windows_reparse_ancestor(&entry_path)
                     && !safety::is_path_critical(&entry_path.to_string_lossy())
                 {
                     dump_size += metadata.len();
@@ -728,71 +745,329 @@ pub fn scan_system_files() -> Vec<CleanableItem> {
     items
 }
 
-/// Escanea los navegadores y sus datos (caché y sesiones/cookies sensibles)
-pub fn scan_browser_files() -> Vec<CleanableItem> {
-    let mut items = Vec::new();
-    let browsers = get_browser_paths();
+fn browser_path_is_safe(path: &Path) -> bool {
+    let path_str = path.to_string_lossy();
+    if safety::is_path_critical(&path_str) || safety::has_windows_reparse_ancestor(path) {
+        return false;
+    }
 
-    for (name, path) in browsers {
-        if !path.exists() {
-            continue;
-        }
-
-        // ID amigable
-        let browser_id = name.to_lowercase();
-
-        // 1. Caché del navegador (SAFE)
-        let cache_dirs = match name.as_str() {
-            "Firefox" => vec![path.join("cache2")], // Firefox tiene las cachés en subcarpetas
-            "Safari" => vec![path.join("Caches"), path.join("LocalStorage")],
-            _ => vec![
-                path.join("Default\\Cache"),
-                path.join("Default\\Code Cache"),
-                path.join("Cache"),
-            ], // Chromium browsers
-        };
-
-        let mut cache_size = 0;
-        let mut cache_paths = Vec::new();
-        for c_dir in &cache_dirs {
-            if c_dir.exists() {
-                cache_size += get_dir_size(c_dir);
-                cache_paths.push(c_dir.to_string_lossy().to_string());
+    for ancestor in path.ancestors().skip(1) {
+        if let Ok(metadata) = fs::symlink_metadata(ancestor) {
+            if metadata.file_type().is_symlink() || safety::metadata_is_reparse_point(&metadata) {
+                return false;
             }
         }
+    }
 
-        if !cache_paths.is_empty() {
-            items.push(CleanableItem::new(
-                &format!("{}_cache", browser_id),
-                &format!("Caché de {}", name),
-                cache_size,
-                cache_paths,
-                RiskLevel::Safe,
-                &format!("Archivos temporales e imágenes cacheadas de páginas web en {}.", name),
-                "Las páginas web que visitas con frecuencia podrían tardar un poco más en cargar la primera vez, pero se optimiza el espacio.",
-                "Seguro de eliminar.",
-                "browser_cache",
-            ));
-        }
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(_) => return false,
+    };
 
-        // 2. Historial de navegación (REVIEW)
-        let mut history_size = 0;
-        let history_files = match name.as_str() {
-            "Firefox" => vec!["places.sqlite".to_string()],
-            "Safari" => vec!["History.db".to_string()],
-            _ => vec!["Default\\History".to_string(), "History".to_string()],
-        };
+    !metadata.file_type().is_symlink() && !safety::metadata_is_reparse_point(&metadata)
+}
 
-        let mut history_paths = Vec::new();
-        for h_file in &history_files {
-            let h_path = path.join(h_file);
-            if h_path.exists() {
-                if let Ok(meta) = fs::metadata(&h_path) {
-                    history_size += meta.len();
-                    history_paths.push(h_path.to_string_lossy().to_string());
+fn browser_file_size(path: &Path) -> Option<u64> {
+    if !browser_path_is_safe(path) {
+        return None;
+    }
+
+    let metadata = fs::symlink_metadata(path).ok()?;
+    metadata.is_file().then_some(metadata.len())
+}
+
+fn collect_browser_path(path: &Path, paths: &mut Vec<String>, size: &mut u64) {
+    if !browser_path_is_safe(path) {
+        return;
+    }
+
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(_) => return,
+    };
+
+    let measured = if metadata.is_file() {
+        metadata.len()
+    } else if metadata.is_dir() {
+        get_dir_size(path)
+    } else {
+        0
+    };
+
+    if measured == 0 {
+        return;
+    }
+
+    *size += measured;
+    paths.push(path.to_string_lossy().to_string());
+}
+
+fn is_chromium_profile_name(name: &str) -> bool {
+    name == "Default"
+        || name
+            .strip_prefix("Profile ")
+            .map(|suffix| !suffix.is_empty() && suffix.chars().all(|ch| ch.is_ascii_digit()))
+            .unwrap_or(false)
+}
+
+fn looks_like_firefox_profile(path: &Path) -> bool {
+    [
+        "prefs.js",
+        "places.sqlite",
+        "cookies.sqlite",
+        "sessionstore.jsonlz4",
+        "storage",
+    ]
+    .iter()
+    .any(|marker| path.join(marker).exists())
+}
+
+fn looks_like_chromium_profile(path: &Path) -> bool {
+    ["Preferences", "History", "Network", "Cache", "Code Cache"]
+        .iter()
+        .any(|marker| path.join(marker).exists())
+}
+
+fn discover_browser_profiles(name: &str, root: &Path) -> Vec<PathBuf> {
+    if !root.exists() || !browser_path_is_safe(root) {
+        return Vec::new();
+    }
+
+    if name == "Safari" {
+        return vec![root.to_path_buf()];
+    }
+
+    let mut profiles = Vec::new();
+
+    if name == "Firefox" {
+        if let Ok(entries) = fs::read_dir(root) {
+            for entry in entries.flatten() {
+                let candidate = entry.path();
+                if browser_path_is_safe(&candidate)
+                    && candidate.is_dir()
+                    && looks_like_firefox_profile(&candidate)
+                {
+                    profiles.push(candidate);
                 }
             }
         }
+    } else {
+        if let Ok(entries) = fs::read_dir(root) {
+            for entry in entries.flatten() {
+                let candidate = entry.path();
+                let entry_name = entry.file_name().to_string_lossy().to_string();
+                if is_chromium_profile_name(&entry_name)
+                    && browser_path_is_safe(&candidate)
+                    && candidate.is_dir()
+                {
+                    profiles.push(candidate);
+                }
+            }
+        }
+
+        // Opera and similar Chromium-based layouts can expose the profile root directly.
+        if profiles.is_empty() && looks_like_chromium_profile(root) {
+            profiles.push(root.to_path_buf());
+        }
+    }
+
+    profiles.sort();
+    profiles.dedup();
+    profiles
+}
+
+fn browser_cache_profile_dir(name: &str, profile: &Path) -> PathBuf {
+    if name == "Firefox" {
+        let profile_name = match profile.file_name() {
+            Some(profile_name) => profile_name,
+            None => return profile.to_path_buf(),
+        };
+
+        #[cfg(target_os = "windows")]
+        {
+            if let Ok(local_appdata) = env::var("LOCALAPPDATA") {
+                return PathBuf::from(local_appdata)
+                    .join("Mozilla\\Firefox\\Profiles")
+                    .join(profile_name);
+            }
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            if let Ok(home) = env::var("HOME") {
+                return PathBuf::from(home)
+                    .join("Library/Caches/Firefox/Profiles")
+                    .join(profile_name);
+            }
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            if let Ok(home) = env::var("HOME") {
+                let cache_root = env::var("XDG_CACHE_HOME")
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|_| PathBuf::from(home).join(".cache"));
+                return cache_root.join("mozilla/firefox").join(profile_name);
+            }
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        if let Ok(home) = env::var("HOME") {
+            let home_path = PathBuf::from(home);
+            let app_support = home_path.join("Library/Application Support");
+            if let Ok(relative) = profile.strip_prefix(&app_support) {
+                return home_path.join("Library/Caches").join(relative);
+            }
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(home) = env::var("HOME") {
+            let home_path = PathBuf::from(home);
+            let system_config = env::var("XDG_CONFIG_HOME")
+                .map(PathBuf::from)
+                .unwrap_or_else(|_| home_path.join(".config"));
+            let system_cache = env::var("XDG_CACHE_HOME")
+                .map(PathBuf::from)
+                .unwrap_or_else(|_| home_path.join(".cache"));
+            if let Ok(relative) = profile.strip_prefix(&system_config) {
+                return system_cache.join(relative);
+            }
+        }
+    }
+
+    profile.to_path_buf()
+}
+
+fn is_browser_crash_report_file(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    [".dmp", ".meta", ".txt", ".extra"]
+        .iter()
+        .any(|extension| lower.ends_with(extension))
+}
+
+fn browser_crash_report_dirs(name: &str, root: &Path) -> Vec<PathBuf> {
+    match name {
+        "Safari" => Vec::new(),
+        "Firefox" => {
+            let crash_root =
+                if root.file_name().and_then(|value| value.to_str()) == Some("Profiles") {
+                    root.parent()
+                        .map(|parent| parent.join("Crash Reports"))
+                        .unwrap_or_else(|| root.join("Crash Reports"))
+                } else {
+                    root.join("Crash Reports")
+                };
+            vec![crash_root.join("pending"), crash_root.join("submitted")]
+        }
+        _ => {
+            #[cfg(any(target_os = "windows", target_os = "macos"))]
+            {
+                let crashpad = root.join("Crashpad");
+                vec![crashpad.join("pending"), crashpad.join("completed")]
+            }
+
+            #[cfg(target_os = "linux")]
+            {
+                let reports = root.join("Crash Reports");
+                vec![
+                    reports.join("new"),
+                    reports.join("pending"),
+                    reports.join("completed"),
+                ]
+            }
+        }
+    }
+}
+
+/// Escanea los navegadores por perfil y separa cache regenerable de datos persistentes/sensibles.
+pub fn scan_browser_files() -> Vec<CleanableItem> {
+    let mut items = Vec::new();
+
+    for (name, root) in get_browser_paths() {
+        let profiles = discover_browser_profiles(&name, &root);
+        if profiles.is_empty() {
+            continue;
+        }
+
+        let browser_id = name.to_lowercase().replace(' ', "_");
+
+        // 1. Cache regenerable (SAFE), separada por semántica.
+        let cache_kinds: Vec<(&str, &str, &str, &str)> = match name.as_str() {
+            "Firefox" => vec![(
+                "cache",
+                "Caché HTTP",
+                "cache2",
+                "Caché HTTP regenerable de páginas web.",
+            )],
+            "Safari" => Vec::new(),
+            _ => vec![
+                (
+                    "cache",
+                    "Caché HTTP",
+                    "Cache",
+                    "Caché HTTP regenerable de páginas web.",
+                ),
+                (
+                    "code_cache",
+                    "Caché de Código",
+                    "Code Cache",
+                    "Código compilado y cacheado para acelerar páginas y aplicaciones web.",
+                ),
+                (
+                    "gpu_cache",
+                    "Caché GPU",
+                    "GPUCache",
+                    "Caché gráfica regenerable usada para acelerar el renderizado.",
+                ),
+            ],
+        };
+
+        for (id_suffix, label, relative_dir, description) in cache_kinds {
+            let mut size = 0u64;
+            let mut paths = Vec::new();
+            for profile in &profiles {
+                let cache_profile = browser_cache_profile_dir(&name, profile);
+                collect_browser_path(&cache_profile.join(relative_dir), &mut paths, &mut size);
+            }
+            paths.sort();
+            paths.dedup();
+
+            if !paths.is_empty() {
+                items.push(CleanableItem::new(
+                &format!("{}_{}", browser_id, id_suffix),
+                &format!("{} de {}", label, name),
+                size,
+                paths,
+                RiskLevel::Safe,
+                description,
+                "El navegador puede regenerar esta caché. Ciérralo antes de limpiar para evitar archivos bloqueados o recreados durante la operación.",
+                "Seguro de eliminar; cerrar el navegador mejora la limpieza.",
+                "browser_cache",
+            ));
+            }
+        }
+
+        // 2. Historial (REVIEW), siempre por archivo exacto dentro de cada perfil.
+        let mut history_size = 0u64;
+        let mut history_paths = Vec::new();
+        for profile in &profiles {
+            let history_path = match name.as_str() {
+                "Firefox" => profile.join("places.sqlite"),
+                "Safari" => profile.join("History.db"),
+                _ => profile.join("History"),
+            };
+
+            if let Some(size) = browser_file_size(&history_path) {
+                history_size += size;
+                history_paths.push(history_path.to_string_lossy().to_string());
+            }
+        }
+        history_paths.sort();
+        history_paths.dedup();
 
         if !history_paths.is_empty() {
             items.push(CleanableItem::new(
@@ -802,108 +1077,84 @@ pub fn scan_browser_files() -> Vec<CleanableItem> {
                 history_paths,
                 RiskLevel::Review,
                 &format!("Listado de sitios web visitados en {} recientemente.", name),
-                "Se borrará el historial de navegación. No podrás usar la función de autocompletado de URLs basada en tu historial.",
-                "Requiere confirmación. Borra tu rastro de navegación.",
+                "Se eliminarán únicamente los archivos de historial mostrados en el Cleanup Plan. Cierra el navegador antes de ejecutar esta acción.",
+                "Requiere confirmación; perderás historial y autocompletado basado en visitas previas.",
                 "browser_history",
             ));
         }
 
-        // 3. Artefactos de descarga incompleta del navegador (SAFE)
-        {
-            let mut artifact_size = 0u64;
-            let mut artifact_paths = Vec::new();
-            match name.as_str() {
-                "Firefox" => {
-                    if let Ok(profile_entries) = fs::read_dir(&path) {
-                        for profile in profile_entries.flatten() {
-                            let profile_path = profile.path();
-                            if profile_path.is_dir() {
-                                if let Ok(files) = fs::read_dir(&profile_path) {
-                                    for file in files.flatten() {
-                                        let fname =
-                                            file.file_name().to_string_lossy().to_lowercase();
-                                        if fname.ends_with(".part") {
-                                            if let Ok(meta) = file.metadata() {
-                                                artifact_size += meta.len();
-                                                artifact_paths.push(
-                                                    file.path().to_string_lossy().to_string(),
-                                                );
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
+        // Descargas incompletas no se emiten en PR-10. Chromium crea .crdownload junto al
+        // target real y Firefox usa .part en el destino de descarga; ese destino puede ser
+        // personalizado. Purgio no adivina ni recorre Downloads como sustituto del estado
+        // real del navegador.
+
+        // 4. Reportes de fallos del navegador (REVIEW), por archivos exactos.
+        let mut crash_size = 0u64;
+        let mut crash_paths = Vec::new();
+        for crash_dir in browser_crash_report_dirs(&name, &root) {
+            if !browser_path_is_safe(&crash_dir) {
+                continue;
+            }
+
+            if let Ok(entries) = fs::read_dir(&crash_dir) {
+                for entry in entries.flatten() {
+                    let entry_path = entry.path();
+                    let entry_name = entry.file_name().to_string_lossy().to_string();
+                    if !is_browser_crash_report_file(&entry_name) {
+                        continue;
                     }
-                }
-                _ => {
-                    let default_dir = path.join("Default");
-                    if default_dir.exists() {
-                        if let Ok(files) = fs::read_dir(&default_dir) {
-                            for file in files.flatten() {
-                                let fname = file.file_name().to_string_lossy().to_lowercase();
-                                if fname.ends_with(".crdownload") {
-                                    if let Ok(meta) = file.metadata() {
-                                        artifact_size += meta.len();
-                                        artifact_paths
-                                            .push(file.path().to_string_lossy().to_string());
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    let file_sys_dir = path.join("Default\\File System");
-                    if file_sys_dir.exists() {
-                        artifact_size += get_dir_size(&file_sys_dir);
-                        artifact_paths.push(file_sys_dir.to_string_lossy().to_string());
+
+                    if let Some(size) = browser_file_size(&entry_path) {
+                        crash_size += size;
+                        crash_paths.push(entry_path.to_string_lossy().to_string());
                     }
                 }
             }
-            if artifact_size > 0 {
-                items.push(CleanableItem::new(
-                    &format!("{}_download_artifacts", browser_id),
-                    &format!("Descargas Incompletas de {}", name),
-                    artifact_size,
-                    artifact_paths,
-                    RiskLevel::Safe,
-                    &format!("Archivos de descarga que se interrumpieron en {} (Mega, YouTube, etc.). Estos archivos ocupan espacio sin utilidad.", name),
-                    "Se eliminarán solo los archivos de descarga incompletos. Las descargas completadas no se verán afectadas.",
-                    "Seguro de eliminar.",
-                    "browser_download_artifacts",
-                ));
-            }
+        }
+        crash_paths.sort();
+        crash_paths.dedup();
+
+        if !crash_paths.is_empty() {
+            items.push(CleanableItem::new(
+            &format!("{}_crash_reports", browser_id),
+            &format!("Reportes de fallos de {}", name),
+            crash_size,
+            crash_paths,
+            RiskLevel::Review,
+            "Minidumps y metadatos de fallos del navegador que pueden servir para diagnosticar cierres inesperados.",
+            "Se eliminarán únicamente los reportes mostrados en el Cleanup Plan. Después no podrás usarlos para investigar esos fallos locales.",
+            "Revisar antes de eliminar si estás diagnosticando un problema del navegador.",
+            "browser_crash_reports",
+        ));
         }
 
-        // 4. Sesiones activas, Cookies, Tokens y Datos de Formularios (SENSITIVE)
-        let mut session_size = 0;
-        let mut session_paths: Vec<String> = Vec::new();
-        let session_files = match name.as_str() {
-            "Firefox" => vec![
-                "cookies.sqlite".to_string(),
-                "sessionstore.jsonlz4".to_string(),
-            ],
-            "Safari" => vec!["Cookies.binarycookies".to_string()],
-            _ => vec![
-                "Default\\Cookies".to_string(),
-                "Default\\Network\\Cookies".to_string(),
-                "Default\\Current Session".to_string(),
-                "Default\\Current Tabs".to_string(),
-                "Default\\Local Storage".to_string(),
-                "Default\\Login Data".to_string(), // Datos de login (contraseñas guardadas)
-                "Cookies".to_string(),
-                "Local Storage".to_string(),
-            ],
-        };
+        // 5. Cookies y estado de sesión (SENSITIVE). Passwords/site data live elsewhere.
+        let mut session_size = 0u64;
+        let mut session_paths = Vec::new();
+        for profile in &profiles {
+            let session_candidates = match name.as_str() {
+                "Firefox" => vec![
+                    profile.join("cookies.sqlite"),
+                    profile.join("sessionstore.jsonlz4"),
+                    profile.join("sessionstore-backups"),
+                ],
+                "Safari" => Vec::new(),
+                _ => vec![
+                    profile.join("Cookies"),
+                    profile.join("Network").join("Cookies"),
+                    profile.join("Current Session"),
+                    profile.join("Current Tabs"),
+                    profile.join("Sessions"),
+                ],
+            };
 
-        for s_file in &session_files {
-            let s_path = path.join(s_file);
-            if s_path.exists() {
-                session_size += get_dir_size(&s_path);
-                session_paths.push(s_path.to_string_lossy().to_string());
+            for candidate in session_candidates {
+                collect_browser_path(&candidate, &mut session_paths, &mut session_size);
             }
         }
+        session_paths.sort();
+        session_paths.dedup();
 
-        // Solo agregar si hay archivos de sesión reales detectados (nunca pasar la raíz del perfil)
         if !session_paths.is_empty() {
             items.push(CleanableItem::new(
                 &format!("{}_sessions", browser_id),
@@ -911,15 +1162,112 @@ pub fn scan_browser_files() -> Vec<CleanableItem> {
                 session_size,
                 session_paths,
                 RiskLevel::Sensitive,
-                &format!("Cookies, sesiones de usuario abiertas, contraseñas cifradas y tokens de autenticación en {}.", name),
-                "Eliminar este elemento cerrará tus sesiones activas en páginas web (correo, redes sociales) y requerirá que vuelvas a introducir tus contraseñas.",
-                "ADVERTENCIA: Cerrará tus sesiones activas.",
+                &format!("Cookies, sesiones abiertas y tokens de autenticación almacenados por {}.", name),
+                "Eliminar estos datos puede cerrar sesiones activas y descartar pestañas restaurables. Cierra el navegador antes de continuar.",
+                "Sensible: requiere confirmación explícita.",
                 "browser_session",
+            ));
+        }
+
+        // 6. Credenciales guardadas (SENSITIVE), separadas de cookies/cache.
+        let mut credential_size = 0u64;
+        let mut credential_paths = Vec::new();
+        for profile in &profiles {
+            let credential_candidates = match name.as_str() {
+                "Firefox" => vec![profile.join("logins.json"), profile.join("key4.db")],
+                "Safari" => Vec::new(),
+                _ => vec![
+                    profile.join("Login Data"),
+                    profile.join("Login Data For Account"),
+                ],
+            };
+
+            for candidate in credential_candidates {
+                if let Some(size) = browser_file_size(&candidate) {
+                    credential_size += size;
+                    credential_paths.push(candidate.to_string_lossy().to_string());
+                }
+            }
+        }
+        credential_paths.sort();
+        credential_paths.dedup();
+
+        if !credential_paths.is_empty() {
+            items.push(CleanableItem::new(
+                &format!("{}_credentials", browser_id),
+                &format!("Credenciales guardadas de {}", name),
+                credential_size,
+                credential_paths,
+                RiskLevel::Sensitive,
+                "Archivos que almacenan contraseñas y material criptográfico usado para proteger credenciales guardadas.",
+                "Eliminar estos archivos puede hacer que pierdas contraseñas guardadas en el perfil del navegador.",
+                "Sensible: no eliminar salvo que quieras borrar credenciales guardadas.",
+                "browser_credentials",
+            ));
+        }
+
+        // 7. Datos persistentes/offline de sitios (SENSITIVE), nunca cache Safe.
+        let mut site_data_size = 0u64;
+        let mut site_data_paths = Vec::new();
+        for profile in &profiles {
+            let site_data_candidates = match name.as_str() {
+                "Firefox" => vec![profile.join("webappsstore.sqlite"), profile.join("storage")],
+                "Safari" => vec![profile.join("LocalStorage")],
+                _ => vec![
+                    profile.join("Local Storage"),
+                    profile.join("IndexedDB"),
+                    profile.join("File System"),
+                    profile.join("Service Worker"),
+                ],
+            };
+
+            for candidate in site_data_candidates {
+                collect_browser_path(&candidate, &mut site_data_paths, &mut site_data_size);
+            }
+        }
+        site_data_paths.sort();
+        site_data_paths.dedup();
+
+        if !site_data_paths.is_empty() {
+            items.push(CleanableItem::new(
+                &format!("{}_site_data", browser_id),
+                &format!("Datos de sitios de {}", name),
+                site_data_size,
+                site_data_paths,
+                RiskLevel::Sensitive,
+                "Almacenamiento persistente y offline de sitios web, aplicaciones web y service workers.",
+                "Eliminar estos datos puede cerrar sesiones, borrar estado local de aplicaciones web o eliminar contenido disponible sin conexión.",
+                "Sensible: revisar rutas y consecuencias antes de eliminar.",
+                "browser_site_data",
             ));
         }
     }
 
     items
+}
+
+#[cfg(test)]
+mod browser_tests {
+    use super::*;
+
+    #[test]
+    fn chromium_profile_name_filter_is_conservative() {
+        assert!(is_chromium_profile_name("Default"));
+        assert!(is_chromium_profile_name("Profile 1"));
+        assert!(is_chromium_profile_name("Profile 25"));
+        assert!(!is_chromium_profile_name("System Profile"));
+        assert!(!is_chromium_profile_name("Guest Profile"));
+        assert!(!is_chromium_profile_name("Profile abc"));
+    }
+
+    #[test]
+    fn crash_report_filter_is_file_extension_scoped() {
+        assert!(is_browser_crash_report_file("abc.dmp"));
+        assert!(is_browser_crash_report_file("abc.META"));
+        assert!(is_browser_crash_report_file("bp-id.txt"));
+        assert!(!is_browser_crash_report_file("settings.json"));
+        assert!(!is_browser_crash_report_file("Crashpad"));
+    }
 }
 
 #[cfg(all(test, target_os = "windows"))]
