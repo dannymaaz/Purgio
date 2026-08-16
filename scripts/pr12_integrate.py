@@ -73,7 +73,7 @@ path.write_text(text)
 # CI formatting scope
 path = Path('.github/workflows/ci.yml')
 text = path.read_text()
-old = 'rustfmt --edition 2021 --check src-tauri/src/scanner.rs src-tauri/src/cleaner.rs src-tauri/src/safety.rs src-tauri/src/persistence.rs src-tauri/src/chrome_ai.rs'
+old = 'rustfmt --edition 2021 --check src-tauri/src/chrome_ai.rs src-tauri/src/scanner.rs src-tauri/src/cleaner.rs src-tauri/src/safety.rs src-tauri/src/persistence.rs'
 new = old + ' src-tauri/src/component_store.rs'
 text = replace_once(text, old, new, 'rustfmt command')
 path.write_text(text)
