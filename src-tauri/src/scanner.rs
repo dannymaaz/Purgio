@@ -52,41 +52,52 @@ impl CleanableItem {
 
 /// Helper para calcular el tamaño de un directorio de forma segura e incremental (evitando bucles infinitos y recursión profunda)
 pub fn get_dir_size<P: AsRef<Path>>(path: P) -> u64 {
-    let mut total_size = 0;
-    let max_depth = 5; // Limitar profundidad para evitar bloqueos
+    const MAX_SCAN_DEPTH: usize = 5;
 
-    fn dir_size_recursive(path: &Path, current_depth: usize, max_depth: usize) -> u64 {
-        if current_depth > max_depth {
+    fn entry_size(path: &Path, current_depth: usize) -> u64 {
+        if current_depth > MAX_SCAN_DEPTH {
             return 0;
         }
 
-        let mut size = 0;
-        if let Ok(entries) = fs::read_dir(path) {
-            for entry in entries.flatten() {
-                if let Ok(metadata) = entry.metadata() {
-                    if metadata.is_file() {
-                        size += metadata.len();
-                    } else if metadata.is_dir() {
-                        // Evitar seguir enlaces simbólicos para no entrar en bucles
-                        if !metadata.file_type().is_symlink() {
-                            size += dir_size_recursive(&entry.path(), current_depth + 1, max_depth);
-                        }
-                    }
-                }
-            }
+        let path_str = path.to_string_lossy();
+        if safety::is_path_critical(&path_str) || safety::has_windows_reparse_ancestor(path) {
+            return 0;
         }
-        size
+
+        let metadata = match fs::symlink_metadata(path) {
+            Ok(metadata) => metadata,
+            Err(_) => return 0,
+        };
+
+        if safety::metadata_is_reparse_point(&metadata) || metadata.file_type().is_symlink() {
+            return 0;
+        }
+
+        if metadata.is_file() {
+            return metadata.len();
+        }
+
+        if !metadata.is_dir() {
+            return 0;
+        }
+
+        fs::read_dir(path)
+            .map(|entries| {
+                entries
+                    .flatten()
+                    .map(|entry| entry_size(&entry.path(), current_depth + 1))
+                    .sum()
+            })
+            .unwrap_or(0)
     }
 
-    if path.as_ref().is_dir() {
-        total_size = dir_size_recursive(path.as_ref(), 0, max_depth);
-    } else if path.as_ref().is_file() {
-        if let Ok(metadata) = fs::metadata(path) {
-            total_size = metadata.len();
-        }
-    }
+    entry_size(path.as_ref(), 0)
+}
 
-    total_size
+#[cfg(target_os = "windows")]
+fn is_windows_thumbnail_cache_file(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    lower.starts_with("thumbcache_") && lower.ends_with(".db")
 }
 
 /// Obtiene los directorios de usuario de navegadores según la plataforma
@@ -128,14 +139,8 @@ fn get_browser_paths() -> Vec<(String, PathBuf)> {
         if let Ok(home) = env::var("HOME") {
             let home_path = PathBuf::from(home);
             let app_support = home_path.join("Library/Application Support");
-            paths.push((
-                "Chrome".to_string(),
-                app_support.join("Google/Chrome"),
-            ));
-            paths.push((
-                "Edge".to_string(),
-                app_support.join("Microsoft Edge"),
-            ));
+            paths.push(("Chrome".to_string(), app_support.join("Google/Chrome")));
+            paths.push(("Edge".to_string(), app_support.join("Microsoft Edge")));
             paths.push((
                 "Brave".to_string(),
                 app_support.join("BraveSoftware/Brave-Browser"),
@@ -148,10 +153,7 @@ fn get_browser_paths() -> Vec<(String, PathBuf)> {
                 "Firefox".to_string(),
                 home_path.join("Library/Application Support/Firefox/Profiles"),
             ));
-            paths.push((
-                "Safari".to_string(),
-                home_path.join("Library/Safari"),
-            ));
+            paths.push(("Safari".to_string(), home_path.join("Library/Safari")));
         }
     }
 
@@ -160,19 +162,13 @@ fn get_browser_paths() -> Vec<(String, PathBuf)> {
         if let Ok(home) = env::var("HOME") {
             let home_path = PathBuf::from(home);
             let config = home_path.join(".config");
-            paths.push((
-                "Chrome".to_string(),
-                config.join("google-chrome"),
-            ));
+            paths.push(("Chrome".to_string(), config.join("google-chrome")));
             paths.push((
                 "Brave".to_string(),
                 config.join("BraveSoftware/Brave-Browser"),
             ));
             paths.push(("Opera".to_string(), config.join("opera")));
-            paths.push((
-                "Firefox".to_string(),
-                home_path.join(".mozilla/firefox"),
-            ));
+            paths.push(("Firefox".to_string(), home_path.join(".mozilla/firefox")));
             paths.push(("Chromium".to_string(), config.join("chromium")));
         }
     }
@@ -214,96 +210,184 @@ pub fn scan_system_files() -> Vec<CleanableItem> {
                 "Archivos Temporales del Sistema",
                 size,
                 vec![system_temp.to_string()],
-                RiskLevel::Safe,
-                "Archivos temporales generados por el sistema operativo y servicios en segundo plano.",
-                "Se eliminarán archivos innecesarios de instalación y logs del sistema viejo.",
-                "Seguro de eliminar.",
+                RiskLevel::Review,
+                "Archivos temporales generados por Windows y servicios en segundo plano dentro de C:\\Windows\\Temp.",
+                "Purgio intentará eliminar únicamente entradas que superen las protecciones de rutas críticas, symlinks y reparse points. Archivos en uso pueden conservarse.",
+                "Revisar antes de eliminar; no se selecciona automáticamente.",
                 "temp",
             ));
         }
 
-        // Caché de miniaturas
+        // Caché de miniaturas: autorizar exactamente los mismos archivos que se contabilizan.
         if let Ok(local_appdata) = env::var("LOCALAPPDATA") {
             let explorer_cache = PathBuf::from(&local_appdata).join("Microsoft\\Windows\\Explorer");
             if explorer_cache.exists() {
-                // Filtrar solo archivos thumbcache_*.db
                 let mut size = 0;
+                let mut thumb_paths = Vec::new();
+
                 if let Ok(entries) = fs::read_dir(&explorer_cache) {
                     for entry in entries.flatten() {
+                        let entry_path = entry.path();
                         let name = entry.file_name().to_string_lossy().to_string();
-                        if name.starts_with("thumbcache_") && name.ends_with(".db") {
-                            if let Ok(meta) = entry.metadata() {
-                                size += meta.len();
-                            }
+                        if !is_windows_thumbnail_cache_file(&name) {
+                            continue;
                         }
+
+                        let metadata = match fs::symlink_metadata(&entry_path) {
+                            Ok(metadata) => metadata,
+                            Err(_) => continue,
+                        };
+
+                        if safety::metadata_is_reparse_point(&metadata)
+                            || metadata.file_type().is_symlink()
+                            || safety::has_windows_reparse_ancestor(&entry_path)
+                            || !metadata.is_file()
+                        {
+                            continue;
+                        }
+
+                        let entry_path_string = entry_path.to_string_lossy().to_string();
+                        if safety::is_path_critical(&entry_path_string) {
+                            continue;
+                        }
+
+                        size += metadata.len();
+                        thumb_paths.push(entry_path_string);
                     }
                 }
-                items.push(CleanableItem::new(
-                    "win_thumb_cache",
-                    "Caché de Miniaturas",
-                    size,
-                    vec![explorer_cache.to_str().unwrap_or("").to_string()],
-                    RiskLevel::Safe,
-                    "Vistas previas de imágenes y videos creadas por el explorador de archivos para mostrarlas rápido.",
-                    "El sistema tardará unos segundos en regenerar las miniaturas de tus carpetas cuando vuelvas a entrar a ellas.",
-                    "Seguro de eliminar.",
-                    "cache",
-                ));
+
+                thumb_paths.sort();
+                thumb_paths.dedup();
+
+                if !thumb_paths.is_empty() {
+                    items.push(CleanableItem::new(
+                        "win_thumb_cache",
+                        "Caché de Miniaturas",
+                        size,
+                        thumb_paths,
+                        RiskLevel::Safe,
+                        "Bases de datos thumbcache_*.db que Windows Explorer usa para acelerar vistas previas.",
+                        "Solo se eliminarán las bases de miniaturas mostradas en el Cleanup Plan. Windows puede regenerarlas cuando vuelvas a explorar carpetas.",
+                        "Seguro de eliminar; las miniaturas se reconstruyen bajo demanda.",
+                        "cache",
+                    ));
+                }
             }
         }
 
-        // Windows Error Reporting
+        // Volcados de aplicaciones del perfil actual. Se autorizan solo .dmp
+        // exactos y se muestran como Review porque son evidencia de diagnóstico.
         if let Ok(local_appdata) = env::var("LOCALAPPDATA") {
-            let wer_path = PathBuf::from(&local_appdata).join("CrashDumps");
-            if wer_path.exists() {
-                let size = get_dir_size(&wer_path);
+            let crash_dumps = PathBuf::from(local_appdata).join("CrashDumps");
+            let mut crash_dump_paths = Vec::new();
+            let mut crash_dump_size = 0;
+
+            if let Ok(entries) = fs::read_dir(&crash_dumps) {
+                for entry in entries.flatten() {
+                    let entry_path = entry.path();
+                    let is_dump = entry_path
+                        .extension()
+                        .and_then(|extension| extension.to_str())
+                        .map(|extension| extension.eq_ignore_ascii_case("dmp"))
+                        .unwrap_or(false);
+                    if !is_dump {
+                        continue;
+                    }
+
+                    let metadata = match fs::symlink_metadata(&entry_path) {
+                        Ok(metadata) => metadata,
+                        Err(_) => continue,
+                    };
+
+                    if metadata.is_file()
+                        && !metadata.file_type().is_symlink()
+                        && !safety::metadata_is_reparse_point(&metadata)
+                        && !safety::has_windows_reparse_ancestor(&entry_path)
+                        && !safety::is_path_critical(&entry_path.to_string_lossy())
+                    {
+                        crash_dump_size += metadata.len();
+                        crash_dump_paths.push(entry_path.to_string_lossy().to_string());
+                    }
+                }
+            }
+
+            crash_dump_paths.sort();
+            crash_dump_paths.dedup();
+            if !crash_dump_paths.is_empty() {
                 items.push(CleanableItem::new(
                     "win_wer",
-                    "Reportes de Error de Windows",
-                    size,
-                    vec![wer_path.to_str().unwrap_or("").to_string()],
-                    RiskLevel::Safe,
-                    "Informes creados automáticamente tras caídas de programas para enviar a Microsoft.",
-                    "Se borrarán volcados de memoria y logs de errores antiguos. No afecta al funcionamiento de los programas.",
-                    "Seguro de eliminar.",
-                    "cache",
+                    "Volcados de Errores de Aplicaciones",
+                    crash_dump_size,
+                    crash_dump_paths,
+                    RiskLevel::Review,
+                    "Archivos .dmp creados en tu perfil cuando una aplicación falla y Windows guarda información para diagnóstico.",
+                    "Solo se eliminarán los dumps mostrados en el Cleanup Plan. Después no podrás usarlos para investigar esos fallos anteriores.",
+                    "Eliminar solo si no necesitas diagnosticar cierres o bloqueos recientes.",
+                    "diagnostics",
                 ));
             }
         }
 
-        // Windows Update Cache
-        let win_update_cache = "C:\\Windows\\SoftwareDistribution\\Download";
-        let win_update_path = PathBuf::from(win_update_cache);
-        if win_update_path.exists() && !safety::is_path_critical(win_update_cache) {
-            let size = get_dir_size(&win_update_path);
-            items.push(CleanableItem::new(
-                "win_update_cache",
-                "Caché de Windows Update",
-                size,
-                vec![win_update_cache.to_string()],
-                RiskLevel::Safe,
-                "Archivos temporales descargados por Windows Update. Se pueden eliminar tras instalar actualizaciones.",
-                "Se liberará espacio. Si hay actualizaciones pendientes de instalar, se volverán a descargar.",
-                "Seguro de eliminar.",
-                "temp",
-            ));
+        // Volcados de errores del sistema. Son útiles para diagnóstico, por eso
+        // se muestran como Review y se autorizan únicamente archivos .dmp exactos.
+        let mut dump_paths = Vec::new();
+        let mut dump_size = 0;
+
+        let memory_dump = PathBuf::from(r"C:\Windows\MEMORY.DMP");
+        if let Ok(metadata) = fs::symlink_metadata(&memory_dump) {
+            if metadata.is_file()
+                && !metadata.file_type().is_symlink()
+                && !safety::metadata_is_reparse_point(&metadata)
+                && !safety::has_windows_reparse_ancestor(&memory_dump)
+                && !safety::is_path_critical(&memory_dump.to_string_lossy())
+            {
+                dump_size += metadata.len();
+                dump_paths.push(memory_dump.to_string_lossy().to_string());
+            }
         }
 
-        // Logs del sistema de Windows
-        let win_logs = "C:\\Windows\\Logs";
-        let win_logs_path = PathBuf::from(win_logs);
-        if win_logs_path.exists() && !safety::is_path_critical(win_logs) {
-            let size = get_dir_size(&win_logs_path);
+        let minidump_dir = PathBuf::from(r"C:\Windows\Minidump");
+        if let Ok(entries) = fs::read_dir(&minidump_dir) {
+            for entry in entries.flatten() {
+                let entry_path = entry.path();
+                let is_dump = entry_path
+                    .extension()
+                    .and_then(|extension| extension.to_str())
+                    .map(|extension| extension.eq_ignore_ascii_case("dmp"))
+                    .unwrap_or(false);
+                if !is_dump {
+                    continue;
+                }
+
+                let metadata = match fs::symlink_metadata(&entry_path) {
+                    Ok(metadata) => metadata,
+                    Err(_) => continue,
+                };
+
+                if metadata.is_file()
+                    && !metadata.file_type().is_symlink()
+                    && !safety::metadata_is_reparse_point(&metadata)
+                    && !safety::is_path_critical(&entry_path.to_string_lossy())
+                {
+                    dump_size += metadata.len();
+                    dump_paths.push(entry_path.to_string_lossy().to_string());
+                }
+            }
+        }
+
+        dump_paths.sort();
+        dump_paths.dedup();
+        if !dump_paths.is_empty() {
             items.push(CleanableItem::new(
-                "win_logs",
-                "Archivos de Log del Sistema",
-                size,
-                vec![win_logs.to_string()],
-                RiskLevel::Safe,
-                "Registros de actividad detallada generados por el sistema operativo Windows y sus servicios.",
-                "Se borrarán logs de diagnóstico de texto plano antiguos. No afecta al funcionamiento de los programas.",
-                "Seguro de eliminar.",
-                "cache",
+                "win_error_dumps",
+                "Volcados de Memoria de Errores de Windows",
+                dump_size,
+                dump_paths,
+                RiskLevel::Review,
+                "Archivos MEMORY.DMP y Minidump/*.dmp generados para diagnosticar fallos, bloqueos y pantallas azules.",
+                "Se eliminarán únicamente los archivos .dmp mostrados en el Cleanup Plan. Perderás información útil para investigar fallos anteriores.",
+                "Eliminar solo si no estás diagnosticando un fallo reciente.",
+                "diagnostics",
             ));
         }
     }
@@ -516,28 +600,9 @@ pub fn scan_system_files() -> Vec<CleanableItem> {
     }
 
     // 2. Papelera de reciclaje
-    // Para simplificar, en Windows simularemos o usaremos comandos para vaciarla, pero podemos comprobar el tamaño del directorio $Recycle.Bin.
-    // Para evitar problemas de permisos leyendo $Recycle.Bin directamente, intentaremos leerlo pero si falla pondremos un tamaño mínimo simulado o 0.
-    #[cfg(target_os = "windows")]
-    {
-        let recycle_bin = "C:\\$Recycle.Bin";
-        let size = if Path::new(recycle_bin).exists() {
-            get_dir_size(recycle_bin)
-        } else {
-            0
-        };
-        items.push(CleanableItem::new(
-            "win_recycle_bin",
-            "Papelera de Reciclaje",
-            size,
-            vec![recycle_bin.to_string()],
-            RiskLevel::Safe,
-            "Contiene archivos que has eliminado pero que aún permanecen en el disco por si deseas restaurarlos.",
-            "Los archivos eliminados se borrarán de forma definitiva y no se podrán recuperar con facilidad.",
-            "Seguro de eliminar permanentemente.",
-            "trash",
-        ));
-    }
+    // Windows se omite intencionalmente aquí: borrar C:\$Recycle.Bin como una
+    // ruta normal puede abarcar contenedores pertenecientes a otros SID. La
+    // funcionalidad volverá únicamente mediante SHQueryRecycleBin/SHEmptyRecycleBin.
 
     #[cfg(target_os = "macos")]
     {
@@ -760,8 +825,9 @@ pub fn scan_browser_files() -> Vec<CleanableItem> {
                                         if fname.ends_with(".part") {
                                             if let Ok(meta) = file.metadata() {
                                                 artifact_size += meta.len();
-                                                artifact_paths
-                                                    .push(file.path().to_string_lossy().to_string());
+                                                artifact_paths.push(
+                                                    file.path().to_string_lossy().to_string(),
+                                                );
                                             }
                                         }
                                     }
@@ -779,7 +845,8 @@ pub fn scan_browser_files() -> Vec<CleanableItem> {
                                 if fname.ends_with(".crdownload") {
                                     if let Ok(meta) = file.metadata() {
                                         artifact_size += meta.len();
-                                        artifact_paths.push(file.path().to_string_lossy().to_string());
+                                        artifact_paths
+                                            .push(file.path().to_string_lossy().to_string());
                                     }
                                 }
                             }
@@ -853,4 +920,18 @@ pub fn scan_browser_files() -> Vec<CleanableItem> {
     }
 
     items
+}
+
+#[cfg(all(test, target_os = "windows"))]
+mod windows_tests {
+    use super::*;
+
+    #[test]
+    fn thumbnail_cache_filename_filter_is_exact() {
+        assert!(is_windows_thumbnail_cache_file("thumbcache_96.db"));
+        assert!(is_windows_thumbnail_cache_file("THUMBCACHE_1024.DB"));
+        assert!(!is_windows_thumbnail_cache_file("iconcache_96.db"));
+        assert!(!is_windows_thumbnail_cache_file("thumbcache_96.db.bak"));
+        assert!(!is_windows_thumbnail_cache_file("thumbcache.db"));
+    }
 }

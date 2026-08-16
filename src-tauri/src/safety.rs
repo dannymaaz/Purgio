@@ -120,11 +120,41 @@ pub fn metadata_is_reparse_point(metadata: &fs::Metadata) -> bool {
     }
 }
 
+/// Comprueba si algún directorio padre del target es un reparse point en Windows.
+///
+/// Validar únicamente el archivo final no es suficiente: un archivo regular puede
+/// estar debajo de un junction y resolver físicamente fuera del alcance que el
+/// Cleanup Plan mostró. En otras plataformas esta comprobación específica no se
+/// aplica; allí se mantienen las protecciones de symlink/canonicalización existentes.
+pub fn has_windows_reparse_ancestor(path: &Path) -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        for ancestor in path.ancestors().skip(1) {
+            let metadata = match fs::symlink_metadata(ancestor) {
+                Ok(metadata) => metadata,
+                Err(_) => continue,
+            };
+
+            if metadata_is_reparse_point(&metadata) {
+                return true;
+            }
+        }
+        false
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = path;
+        false
+    }
+}
+
 /// Valida y canonicaliza un objetivo antes de cualquier operación destructiva.
 ///
 /// La comprobación se realiza tanto sobre la ruta recibida como sobre su ruta
-/// canonicalizada. Esto evita que componentes como `..`, aliases o enlaces que
-/// resuelven hacia un directorio protegido puedan saltarse el filtro original.
+/// canonicalizada. En Windows también se rechaza cualquier target que atraviese
+/// un junction/reparse en un directorio padre, evitando que una ruta visible en el
+/// Cleanup Plan resuelva a otro árbol sin que el usuario lo haya revisado.
 pub fn validate_cleanup_target(path_str: &str) -> Result<PathBuf, String> {
     if path_str.trim().is_empty() {
         return Err("Acción bloqueada: ruta vacía.".to_string());
@@ -141,6 +171,13 @@ pub fn validate_cleanup_target(path_str: &str) -> Result<PathBuf, String> {
     if is_path_critical(path_str) {
         return Err(format!(
             "Acción bloqueada: {} es una ruta crítica del sistema operativo.",
+            path_str
+        ));
+    }
+
+    if has_windows_reparse_ancestor(path) {
+        return Err(format!(
+            "Acción bloqueada: {} atraviesa un reparse point o junction en un directorio padre.",
             path_str
         ));
     }
