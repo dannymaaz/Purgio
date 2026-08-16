@@ -461,11 +461,11 @@ export function translateBackendText(language: UiLanguage, source: string): stri
   if (exact) return exact;
 
   const dynamicRules: Array<[RegExp, (match: RegExpMatchArray) => string]> = [
-    [/^Caché de (.+)$/, (m) => `${m[1]} Cache`],
     [/^Caché HTTP de (.+)$/, (m) => `${m[1]} HTTP Cache`],
-  [/^Caché de Código de (.+)$/, (m) => `${m[1]} Code Cache`],
-  [/^Caché GPU de (.+)$/, (m) => `${m[1]} GPU Cache`],
-  [/^Reportes de fallos de (.+)$/, (m) => `${m[1]} Crash Reports`],
+    [/^Caché de Código de (.+)$/, (m) => `${m[1]} Code Cache`],
+    [/^Caché GPU de (.+)$/, (m) => `${m[1]} GPU Cache`],
+    [/^Reportes de fallos de (.+)$/, (m) => `${m[1]} Crash Reports`],
+    [/^Caché de (.+)$/, (m) => `${m[1]} Cache`],
     [/^Archivos temporales e imágenes cacheadas de páginas web en (.+)\.$/, (m) => `Temporary files and cached web-page images in ${m[1]}.`],
     [/^Historial de navegación de (.+)$/, (m) => `${m[1]} Browsing History`],
     [/^Listado de sitios web visitados en (.+) recientemente\.$/, (m) => `List of websites recently visited in ${m[1]}.`],

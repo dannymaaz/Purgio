@@ -160,16 +160,32 @@ fn get_browser_paths() -> Vec<(String, PathBuf)> {
     #[cfg(target_os = "linux")]
     {
         if let Ok(home) = env::var("HOME") {
-            let home_path = PathBuf::from(home);
-            let config = home_path.join(".config");
-            paths.push(("Chrome".to_string(), config.join("google-chrome")));
+            let home_path = PathBuf::from(&home);
+            let system_config = env::var("XDG_CONFIG_HOME")
+                .map(PathBuf::from)
+                .unwrap_or_else(|_| home_path.join(".config"));
+            let chrome_config = env::var("CHROME_CONFIG_HOME")
+                .map(PathBuf::from)
+                .unwrap_or_else(|_| system_config.clone());
+
+            paths.push(("Chrome".to_string(), chrome_config.join("google-chrome")));
             paths.push((
                 "Brave".to_string(),
-                config.join("BraveSoftware/Brave-Browser"),
+                system_config.join("BraveSoftware/Brave-Browser"),
             ));
-            paths.push(("Opera".to_string(), config.join("opera")));
-            paths.push(("Firefox".to_string(), home_path.join(".mozilla/firefox")));
-            paths.push(("Chromium".to_string(), config.join("chromium")));
+            paths.push(("Opera".to_string(), system_config.join("opera")));
+
+            let legacy_firefox = home_path.join(".mozilla/firefox");
+            let xdg_firefox = system_config.join("mozilla/firefox");
+            paths.push((
+                "Firefox".to_string(),
+                if legacy_firefox.exists() {
+                    legacy_firefox
+                } else {
+                    xdg_firefox
+                },
+            ));
+            paths.push(("Chromium".to_string(), chrome_config.join("chromium")));
         }
     }
 
@@ -860,13 +876,70 @@ fn discover_browser_profiles(name: &str, root: &Path) -> Vec<PathBuf> {
     profiles
 }
 
-fn is_incomplete_browser_download(name: &str, browser: &str) -> bool {
-    let lower = name.to_ascii_lowercase();
-    match browser {
-        "Firefox" => lower.ends_with(".part"),
-        "Safari" => false,
-        _ => lower.ends_with(".crdownload"),
+fn browser_cache_profile_dir(name: &str, profile: &Path) -> PathBuf {
+    if name == "Firefox" {
+        let profile_name = match profile.file_name() {
+            Some(profile_name) => profile_name,
+            None => return profile.to_path_buf(),
+        };
+
+        #[cfg(target_os = "windows")]
+        {
+            if let Ok(local_appdata) = env::var("LOCALAPPDATA") {
+                return PathBuf::from(local_appdata)
+                    .join("Mozilla\\Firefox\\Profiles")
+                    .join(profile_name);
+            }
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            if let Ok(home) = env::var("HOME") {
+                return PathBuf::from(home)
+                    .join("Library/Caches/Firefox/Profiles")
+                    .join(profile_name);
+            }
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            if let Ok(home) = env::var("HOME") {
+                let cache_root = env::var("XDG_CACHE_HOME")
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|_| PathBuf::from(home).join(".cache"));
+                return cache_root.join("mozilla/firefox").join(profile_name);
+            }
+        }
     }
+
+    #[cfg(target_os = "macos")]
+    {
+        if let Ok(home) = env::var("HOME") {
+            let home_path = PathBuf::from(home);
+            let app_support = home_path.join("Library/Application Support");
+            if let Ok(relative) = profile.strip_prefix(&app_support) {
+                return home_path.join("Library/Caches").join(relative);
+            }
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(home) = env::var("HOME") {
+            let home_path = PathBuf::from(home);
+            let system_config = env::var("XDG_CONFIG_HOME")
+                .map(PathBuf::from)
+                .unwrap_or_else(|_| home_path.join(".config"));
+            let system_cache = env::var("XDG_CACHE_HOME")
+                .map(PathBuf::from)
+                .unwrap_or_else(|_| home_path.join(".cache"));
+            if let Ok(relative) = profile.strip_prefix(&system_config) {
+                return system_cache.join(relative);
+            }
+        }
+    }
+
+    profile.to_path_buf()
 }
 
 fn is_browser_crash_report_file(name: &str) -> bool {
@@ -957,7 +1030,8 @@ pub fn scan_browser_files() -> Vec<CleanableItem> {
             let mut size = 0u64;
             let mut paths = Vec::new();
             for profile in &profiles {
-                collect_browser_path(&profile.join(relative_dir), &mut paths, &mut size);
+                let cache_profile = browser_cache_profile_dir(&name, profile);
+                collect_browser_path(&cache_profile.join(relative_dir), &mut paths, &mut size);
             }
             paths.sort();
             paths.dedup();
@@ -1009,41 +1083,10 @@ pub fn scan_browser_files() -> Vec<CleanableItem> {
             ));
         }
 
-        // 3. Descargas incompletas: solo artefactos de archivo verificables.
-        let mut artifact_size = 0u64;
-        let mut artifact_paths = Vec::new();
-        for profile in &profiles {
-            if let Ok(entries) = fs::read_dir(profile) {
-                for entry in entries.flatten() {
-                    let entry_path = entry.path();
-                    let entry_name = entry.file_name().to_string_lossy().to_string();
-                    if !is_incomplete_browser_download(&entry_name, &name) {
-                        continue;
-                    }
-
-                    if let Some(size) = browser_file_size(&entry_path) {
-                        artifact_size += size;
-                        artifact_paths.push(entry_path.to_string_lossy().to_string());
-                    }
-                }
-            }
-        }
-        artifact_paths.sort();
-        artifact_paths.dedup();
-
-        if !artifact_paths.is_empty() {
-            items.push(CleanableItem::new(
-                &format!("{}_download_artifacts", browser_id),
-                &format!("Descargas Incompletas de {}", name),
-                artifact_size,
-                artifact_paths,
-                RiskLevel::Safe,
-                &format!("Archivos de descarga que se interrumpieron en {} y conservan una extensión temporal de descarga incompleta.", name),
-                "Se eliminarán únicamente los archivos .crdownload o .part mostrados en el Cleanup Plan. No se incluye almacenamiento offline de sitios.",
-                "Seguro de eliminar si no deseas reanudar esas descargas.",
-                "browser_download_artifacts",
-            ));
-        }
+        // Descargas incompletas no se emiten en PR-10. Chromium crea .crdownload junto al
+        // target real y Firefox usa .part en el destino de descarga; ese destino puede ser
+        // personalizado. Purgio no adivina ni recorre Downloads como sustituto del estado
+        // real del navegador.
 
         // 4. Reportes de fallos del navegador (REVIEW), por archivos exactos.
         let mut crash_size = 0u64;
@@ -1215,15 +1258,6 @@ mod browser_tests {
         assert!(!is_chromium_profile_name("System Profile"));
         assert!(!is_chromium_profile_name("Guest Profile"));
         assert!(!is_chromium_profile_name("Profile abc"));
-    }
-
-    #[test]
-    fn incomplete_download_filter_is_extension_scoped() {
-        assert!(is_incomplete_browser_download("video.crdownload", "Chrome"));
-        assert!(is_incomplete_browser_download("archive.PART", "Firefox"));
-        assert!(!is_incomplete_browser_download("video.mp4", "Chrome"));
-        assert!(!is_incomplete_browser_download("File System", "Chrome"));
-        assert!(!is_incomplete_browser_download("download.part", "Safari"));
     }
 
     #[test]
