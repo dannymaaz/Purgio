@@ -3,11 +3,11 @@
 ![Build Status](https://img.shields.io/github/actions/workflow/status/dannymaaz/Purgio/release.yml?branch=main&style=flat-square)
 ![Latest Release](https://img.shields.io/github/v/release/dannymaaz/Purgio?style=flat-square&color=00BC99)
 ![License](https://img.shields.io/github/license/dannymaaz/Purgio?style=flat-square&color=03738C)
-![Supported Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-012E40?style=flat-square)
+![Supported Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-012E40?style=flat-square)
 
-Purgio es una **aplicación desktop multiplataforma**, segura, minimalista y de muy bajo consumo de recursos, diseñada para la limpieza, optimización y gestión del sistema. Permite analizar el almacenamiento para liberar espacio en disco de manera segura y transparente, y administrar los programas de inicio y procesos activos de fondo.
+Purgio es una aplicación open source de limpieza y optimización segura para **Windows 10 y Windows 11**. Analiza archivos temporales, datos de navegadores, programas de inicio y procesos activos, mostrando qué puede eliminarse y qué riesgo implica antes de realizar cambios.
 
-Desarrollada bajo estándares de ingeniería de software premium, Purgio reutiliza el motor Webview nativo de tu sistema para consumir menos de 100 MB de memoria RAM, ofreciendo una experiencia visual moderna, fluida y con control absoluto sobre tus datos.
+Construida con Tauri, Rust y React, Purgio procesa la información localmente y prioriza controles preventivos para evitar rutas críticas, sesiones activas y datos sensibles.
 
 ---
 
@@ -22,24 +22,13 @@ Desarrollada bajo estándares de ingeniería de software premium, Purgio reutili
 
 ---
 
-## Capturas de Pantalla
-
-*(Próximamente)*
-<!-- 
-Colocar capturas aquí:
-![Dashboard de Purgio](docs/screenshots/dashboard.png)
-![Limpieza de Archivos](docs/screenshots/cleaner.png)
--->
-
----
-
 ## Descarga de Ejecutables
 
 Puedes descargar los instaladores nativos listos para producción desde la sección de [GitHub Releases](https://github.com/dannymaaz/Purgio/releases):
 
-- **Windows**: `.exe` / `.msi` (Soporte para Windows 10 y 11)
-- **macOS**: `.dmg` / `.app` (Compatible con arquitecturas Intel y Apple Silicon)
-- **Linux**: `.AppImage` / `.deb` (Probado en Ubuntu, Debian, Fedora, Arch)
+- **Windows 10 y 11 (x64)**: instalador NSIS `.exe` generado y validado mediante GitHub Actions.
+
+El soporte para macOS y Linux no se anuncia como estable hasta contar con compilaciones y pruebas verificables para esas plataformas.
 
 ---
 
@@ -106,12 +95,15 @@ Asegúrate de tener instalado en tu sistema:
 
 ---
 
-## Seguridad y Transparencia
+## Seguridad, transparencia y límites
 
 Purgio se rige bajo principios estrictos de seguridad de la información:
 - **Sin permisos elevados innecesarios**: Purgio corre a nivel de usuario sin requerir administrador o root por defecto, garantizando que no pueda dañar el sistema operativo.
 - **Protección de rutas críticas**: El backend de Rust cuenta con una lista negra de directorios esenciales (como `System32`, `/System`, `/usr/bin`, etc.). Cualquier intento de escaneo o eliminación en estas rutas es bloqueado y reportado inmediatamente.
 - **Explicación clara**: Cada elemento escaneado cuenta con detalles sobre qué es, por qué ocupa espacio, qué pasará si se elimina y el nivel de riesgo sugerido.
+- **Validación antes de publicar**: El CI compila el frontend, ejecuta pruebas y Clippy en Windows y verifica el instalador NSIS.
+
+> Purgio reduce riesgos mediante bloqueos y exclusiones, pero ninguna herramienta de limpieza puede garantizar riesgo cero. Revisa siempre la selección antes de confirmar y mantén respaldos de los datos importantes.
 
 ---
 
@@ -119,7 +111,7 @@ Purgio se rige bajo principios estrictos de seguridad de la información:
 
 - **Backend**: Rust, Tauri v2, `sysinfo`, `winreg` (en Windows).
 - **Frontend**: React v19, TypeScript, Vite, CSS moderno.
-- **CI/CD**: GitHub Actions con automatización multiplataforma.
+- **CI/CD**: GitHub Actions para calidad de frontend, pruebas Rust, Clippy y empaquetado NSIS en Windows.
 
 ---
 
