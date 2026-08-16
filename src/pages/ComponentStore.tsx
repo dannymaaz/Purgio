@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { platform } from '@tauri-apps/plugin-os';
 import { RefreshIcon } from '../components/Icons';
 import { useI18n } from '../i18n';
 
@@ -30,20 +31,15 @@ export const ComponentStorePanel: React.FC = () => {
   const [busy, setBusy] = useState<'analyze' | 'cleanup' | null>(null);
   const [confirmed, setConfirmed] = useState(false);
 
+  if (platform() !== 'windows') return null;
+
   const analyze = async () => {
     setBusy('analyze');
     setConfirmed(false);
     try {
       setResult(await invoke<ComponentStoreResult>('analyze_component_store'));
     } catch (error) {
-      setResult({
-        success: false,
-        requires_elevation: false,
-        message: String(error),
-        analysis: null,
-        stdout: '',
-        stderr: '',
-      });
+      setResult({ success: false, requires_elevation: false, message: String(error), analysis: null, stdout: '', stderr: '' });
     } finally {
       setBusy(null);
     }
@@ -56,14 +52,7 @@ export const ComponentStorePanel: React.FC = () => {
       setResult(await invoke<ComponentStoreResult>('start_component_cleanup'));
       setConfirmed(false);
     } catch (error) {
-      setResult({
-        success: false,
-        requires_elevation: false,
-        message: String(error),
-        analysis: null,
-        stdout: '',
-        stderr: '',
-      });
+      setResult({ success: false, requires_elevation: false, message: String(error), analysis: null, stdout: '', stderr: '' });
     } finally {
       setBusy(null);
     }
