@@ -1,0 +1,36 @@
+name: "PR-11 Chrome model detector integration"
+
+on:
+  push:
+    branches:
+      - pr-11-chrome-on-device-model
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Apply detector integration
+        run: python3 scripts/pr11_integrate_detector.py
+      - name: Format detector
+        run: rustfmt --edition 2021 src-tauri/src/chrome_ai.rs
+      - name: Commit product changes
+        shell: bash
+        run: |
+          git config user.name "Danny Maaz"
+          git config user.email "61290346+dannymaaz@users.noreply.github.com"
+          git add src-tauri/src/chrome_ai.rs src-tauri/src/lib.rs src/App.tsx src/pages/Browsers.tsx src/i18n.tsx .github/workflows/ci.yml
+          if git diff --cached --quiet; then
+            echo "No product changes to commit"
+            exit 0
+          fi
+          git commit -m "Integrate Chrome model detector"
+          git push origin HEAD:pr-11-chrome-on-device-model
