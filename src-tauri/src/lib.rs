@@ -270,17 +270,13 @@ fn get_startup_items() -> Vec<StartupItem> {
 }
 
 #[tauri::command]
-fn disable_startup(id: String, location_key: String) -> Result<(), String> {
-    startup::disable_startup_item(&id, &location_key)
+fn disable_startup(id: String) -> Result<(), String> {
+    startup::disable_startup_item(&id)
 }
 
 #[tauri::command]
-fn enable_startup(
-    name: String,
-    location_key: String,
-    original_command: String,
-) -> Result<(), String> {
-    startup::enable_startup_item(&name, &location_key, &original_command)
+fn enable_startup(id: String) -> Result<(), String> {
+    startup::enable_startup_item(&id)
 }
 
 #[tauri::command]
