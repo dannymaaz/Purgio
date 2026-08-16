@@ -120,13 +120,13 @@ fn get_browser_paths() -> Vec<(String, PathBuf)> {
                 "Brave".to_string(),
                 app_data_path.join("BraveSoftware\\Brave-Browser\\User Data"),
             ));
+        }
+        if let Ok(app_data_roaming) = env::var("APPDATA") {
+            let app_data_path = PathBuf::from(app_data_roaming);
             paths.push((
                 "Opera".to_string(),
                 app_data_path.join("Opera Software\\Opera Stable"),
             ));
-        }
-        if let Ok(app_data_roaming) = env::var("APPDATA") {
-            let app_data_path = PathBuf::from(app_data_roaming);
             paths.push((
                 "Firefox".to_string(),
                 app_data_path.join("Mozilla\\Firefox\\Profiles"),
@@ -367,6 +367,7 @@ pub fn scan_system_files() -> Vec<CleanableItem> {
                 if metadata.is_file()
                     && !metadata.file_type().is_symlink()
                     && !safety::metadata_is_reparse_point(&metadata)
+                    && !safety::has_windows_reparse_ancestor(&entry_path)
                     && !safety::is_path_critical(&entry_path.to_string_lossy())
                 {
                     dump_size += metadata.len();
@@ -868,6 +869,47 @@ fn is_incomplete_browser_download(name: &str, browser: &str) -> bool {
     }
 }
 
+fn is_browser_crash_report_file(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    [".dmp", ".meta", ".txt", ".extra"]
+        .iter()
+        .any(|extension| lower.ends_with(extension))
+}
+
+fn browser_crash_report_dirs(name: &str, root: &Path) -> Vec<PathBuf> {
+    match name {
+        "Safari" => Vec::new(),
+        "Firefox" => {
+            let crash_root =
+                if root.file_name().and_then(|value| value.to_str()) == Some("Profiles") {
+                    root.parent()
+                        .map(|parent| parent.join("Crash Reports"))
+                        .unwrap_or_else(|| root.join("Crash Reports"))
+                } else {
+                    root.join("Crash Reports")
+                };
+            vec![crash_root.join("pending"), crash_root.join("submitted")]
+        }
+        _ => {
+            #[cfg(any(target_os = "windows", target_os = "macos"))]
+            {
+                let crashpad = root.join("Crashpad");
+                vec![crashpad.join("pending"), crashpad.join("completed")]
+            }
+
+            #[cfg(target_os = "linux")]
+            {
+                let reports = root.join("Crash Reports");
+                vec![
+                    reports.join("new"),
+                    reports.join("pending"),
+                    reports.join("completed"),
+                ]
+            }
+        }
+    }
+}
+
 /// Escanea los navegadores por perfil y separa cache regenerable de datos persistentes/sensibles.
 pub fn scan_browser_files() -> Vec<CleanableItem> {
     let mut items = Vec::new();
@@ -880,39 +922,59 @@ pub fn scan_browser_files() -> Vec<CleanableItem> {
 
         let browser_id = name.to_lowercase().replace(' ', "_");
 
-        // 1. Cache regenerable (SAFE). Local Storage / File System / IndexedDB are excluded.
-        let mut cache_size = 0u64;
-        let mut cache_paths = Vec::new();
-        for profile in &profiles {
-            let cache_dirs = match name.as_str() {
-                "Firefox" => vec![profile.join("cache2")],
-                "Safari" => Vec::new(),
-                _ => vec![
-                    profile.join("Cache"),
-                    profile.join("Code Cache"),
-                    profile.join("GPUCache"),
-                ],
-            };
+        // 1. Cache regenerable (SAFE), separada por semántica.
+        let cache_kinds: Vec<(&str, &str, &str, &str)> = match name.as_str() {
+            "Firefox" => vec![(
+                "cache",
+                "Caché HTTP",
+                "cache2",
+                "Caché HTTP regenerable de páginas web.",
+            )],
+            "Safari" => Vec::new(),
+            _ => vec![
+                (
+                    "cache",
+                    "Caché HTTP",
+                    "Cache",
+                    "Caché HTTP regenerable de páginas web.",
+                ),
+                (
+                    "code_cache",
+                    "Caché de Código",
+                    "Code Cache",
+                    "Código compilado y cacheado para acelerar páginas y aplicaciones web.",
+                ),
+                (
+                    "gpu_cache",
+                    "Caché GPU",
+                    "GPUCache",
+                    "Caché gráfica regenerable usada para acelerar el renderizado.",
+                ),
+            ],
+        };
 
-            for cache_dir in cache_dirs {
-                collect_browser_path(&cache_dir, &mut cache_paths, &mut cache_size);
+        for (id_suffix, label, relative_dir, description) in cache_kinds {
+            let mut size = 0u64;
+            let mut paths = Vec::new();
+            for profile in &profiles {
+                collect_browser_path(&profile.join(relative_dir), &mut paths, &mut size);
             }
-        }
-        cache_paths.sort();
-        cache_paths.dedup();
+            paths.sort();
+            paths.dedup();
 
-        if !cache_paths.is_empty() {
-            items.push(CleanableItem::new(
-                &format!("{}_cache", browser_id),
-                &format!("Caché de {}", name),
-                cache_size,
-                cache_paths,
+            if !paths.is_empty() {
+                items.push(CleanableItem::new(
+                &format!("{}_{}", browser_id, id_suffix),
+                &format!("{} de {}", label, name),
+                size,
+                paths,
                 RiskLevel::Safe,
-                &format!("Archivos temporales e imágenes cacheadas de páginas web en {}.", name),
-                "El navegador puede regenerar estas cachés. Ciérralo antes de limpiar para evitar archivos bloqueados o recreados durante la operación.",
+                description,
+                "El navegador puede regenerar esta caché. Ciérralo antes de limpiar para evitar archivos bloqueados o recreados durante la operación.",
                 "Seguro de eliminar; cerrar el navegador mejora la limpieza.",
                 "browser_cache",
             ));
+            }
         }
 
         // 2. Historial (REVIEW), siempre por archivo exacto dentro de cada perfil.
@@ -983,7 +1045,47 @@ pub fn scan_browser_files() -> Vec<CleanableItem> {
             ));
         }
 
-        // 4. Cookies y estado de sesión (SENSITIVE). Passwords/site data live elsewhere.
+        // 4. Reportes de fallos del navegador (REVIEW), por archivos exactos.
+        let mut crash_size = 0u64;
+        let mut crash_paths = Vec::new();
+        for crash_dir in browser_crash_report_dirs(&name, &root) {
+            if !browser_path_is_safe(&crash_dir) {
+                continue;
+            }
+
+            if let Ok(entries) = fs::read_dir(&crash_dir) {
+                for entry in entries.flatten() {
+                    let entry_path = entry.path();
+                    let entry_name = entry.file_name().to_string_lossy().to_string();
+                    if !is_browser_crash_report_file(&entry_name) {
+                        continue;
+                    }
+
+                    if let Some(size) = browser_file_size(&entry_path) {
+                        crash_size += size;
+                        crash_paths.push(entry_path.to_string_lossy().to_string());
+                    }
+                }
+            }
+        }
+        crash_paths.sort();
+        crash_paths.dedup();
+
+        if !crash_paths.is_empty() {
+            items.push(CleanableItem::new(
+            &format!("{}_crash_reports", browser_id),
+            &format!("Reportes de fallos de {}", name),
+            crash_size,
+            crash_paths,
+            RiskLevel::Review,
+            "Minidumps y metadatos de fallos del navegador que pueden servir para diagnosticar cierres inesperados.",
+            "Se eliminarán únicamente los reportes mostrados en el Cleanup Plan. Después no podrás usarlos para investigar esos fallos locales.",
+            "Revisar antes de eliminar si estás diagnosticando un problema del navegador.",
+            "browser_crash_reports",
+        ));
+        }
+
+        // 5. Cookies y estado de sesión (SENSITIVE). Passwords/site data live elsewhere.
         let mut session_size = 0u64;
         let mut session_paths = Vec::new();
         for profile in &profiles {
@@ -1024,7 +1126,7 @@ pub fn scan_browser_files() -> Vec<CleanableItem> {
             ));
         }
 
-        // 5. Credenciales guardadas (SENSITIVE), separadas de cookies/cache.
+        // 6. Credenciales guardadas (SENSITIVE), separadas de cookies/cache.
         let mut credential_size = 0u64;
         let mut credential_paths = Vec::new();
         for profile in &profiles {
@@ -1061,7 +1163,7 @@ pub fn scan_browser_files() -> Vec<CleanableItem> {
             ));
         }
 
-        // 6. Datos persistentes/offline de sitios (SENSITIVE), nunca cache Safe.
+        // 7. Datos persistentes/offline de sitios (SENSITIVE), nunca cache Safe.
         let mut site_data_size = 0u64;
         let mut site_data_paths = Vec::new();
         for profile in &profiles {
@@ -1122,6 +1224,15 @@ mod browser_tests {
         assert!(!is_incomplete_browser_download("video.mp4", "Chrome"));
         assert!(!is_incomplete_browser_download("File System", "Chrome"));
         assert!(!is_incomplete_browser_download("download.part", "Safari"));
+    }
+
+    #[test]
+    fn crash_report_filter_is_file_extension_scoped() {
+        assert!(is_browser_crash_report_file("abc.dmp"));
+        assert!(is_browser_crash_report_file("abc.META"));
+        assert!(is_browser_crash_report_file("bp-id.txt"));
+        assert!(!is_browser_crash_report_file("settings.json"));
+        assert!(!is_browser_crash_report_file("Crashpad"));
     }
 }
 
