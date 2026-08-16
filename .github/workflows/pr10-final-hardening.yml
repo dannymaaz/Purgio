@@ -1,0 +1,298 @@
+name: "PR-10 final browser hardening"
+
+on:
+  push:
+    branches:
+      - pr-10-browser-cleanup-safe
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Apply final browser hardening
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          scanner_path = Path('src-tauri/src/scanner.rs')
+          text = scanner_path.read_text()
+
+          opera_local = '''            paths.push((
+                          "Opera".to_string(),
+                          app_data_path.join("Opera Software\\\\Opera Stable"),
+                      ));
+          '''
+          if opera_local not in text:
+              raise SystemExit('Missing Windows Opera LOCALAPPDATA block')
+          text = text.replace(opera_local, '', 1)
+
+          roaming_anchor = '''        if let Ok(app_data_roaming) = env::var("APPDATA") {
+                      let app_data_path = PathBuf::from(app_data_roaming);
+          '''
+          roaming_new = roaming_anchor + '''            paths.push((
+                          "Opera".to_string(),
+                          app_data_path.join("Opera Software\\\\Opera Stable"),
+                      ));
+          '''
+          if roaming_anchor not in text:
+              raise SystemExit('Missing APPDATA browser block')
+          text = text.replace(roaming_anchor, roaming_new, 1)
+
+          minidump_old = '''                if metadata.is_file()
+                              && !metadata.file_type().is_symlink()
+                              && !safety::metadata_is_reparse_point(&metadata)
+                              && !safety::is_path_critical(&entry_path.to_string_lossy())
+                          {
+          '''
+          minidump_new = '''                if metadata.is_file()
+                              && !metadata.file_type().is_symlink()
+                              && !safety::metadata_is_reparse_point(&metadata)
+                              && !safety::has_windows_reparse_ancestor(&entry_path)
+                              && !safety::is_path_critical(&entry_path.to_string_lossy())
+                          {
+          '''
+          if minidump_old not in text:
+              raise SystemExit('Missing Minidump safety block')
+          text = text.replace(minidump_old, minidump_new, 1)
+
+          helper_anchor = '''fn is_incomplete_browser_download(name: &str, browser: &str) -> bool {
+              let lower = name.to_ascii_lowercase();
+              match browser {
+                  "Firefox" => lower.ends_with(".part"),
+                  "Safari" => false,
+                  _ => lower.ends_with(".crdownload"),
+              }
+          }
+          '''
+          helper_new = helper_anchor + '''
+          fn is_browser_crash_report_file(name: &str) -> bool {
+              let lower = name.to_ascii_lowercase();
+              [".dmp", ".meta", ".txt", ".extra"]
+                  .iter()
+                  .any(|extension| lower.ends_with(extension))
+          }
+
+          fn browser_crash_report_dirs(name: &str, root: &Path) -> Vec<PathBuf> {
+              match name {
+                  "Safari" => Vec::new(),
+                  "Firefox" => {
+                      let crash_root = if root.file_name().and_then(|value| value.to_str()) == Some("Profiles") {
+                          root.parent()
+                              .map(|parent| parent.join("Crash Reports"))
+                              .unwrap_or_else(|| root.join("Crash Reports"))
+                      } else {
+                          root.join("Crash Reports")
+                      };
+                      vec![crash_root.join("pending"), crash_root.join("submitted")]
+                  }
+                  _ => {
+                      #[cfg(any(target_os = "windows", target_os = "macos"))]
+                      {
+                          let crashpad = root.join("Crashpad");
+                          vec![crashpad.join("pending"), crashpad.join("completed")]
+                      }
+
+                      #[cfg(target_os = "linux")]
+                      {
+                          let reports = root.join("Crash Reports");
+                          vec![
+                              reports.join("new"),
+                              reports.join("pending"),
+                              reports.join("completed"),
+                          ]
+                      }
+                  }
+              }
+          }
+          '''
+          if helper_anchor not in text:
+              raise SystemExit('Missing incomplete download helper')
+          text = text.replace(helper_anchor, helper_new, 1)
+
+          cache_start = text.index('        // 1. Cache regenerable (SAFE).')
+          history_start = text.index('        // 2. Historial (REVIEW)', cache_start)
+          cache_replacement = r'''        // 1. Cache regenerable (SAFE), separada por semántica.
+              let cache_kinds: Vec<(&str, &str, &str, &str)> = match name.as_str() {
+                  "Firefox" => vec![(
+                      "cache",
+                      "Caché HTTP",
+                      "cache2",
+                      "Caché HTTP regenerable de páginas web.",
+                  )],
+                  "Safari" => Vec::new(),
+                  _ => vec![
+                      (
+                          "cache",
+                          "Caché HTTP",
+                          "Cache",
+                          "Caché HTTP regenerable de páginas web.",
+                      ),
+                      (
+                          "code_cache",
+                          "Caché de Código",
+                          "Code Cache",
+                          "Código compilado y cacheado para acelerar páginas y aplicaciones web.",
+                      ),
+                      (
+                          "gpu_cache",
+                          "Caché GPU",
+                          "GPUCache",
+                          "Caché gráfica regenerable usada para acelerar el renderizado.",
+                      ),
+                  ],
+              };
+
+              for (id_suffix, label, relative_dir, description) in cache_kinds {
+                  let mut size = 0u64;
+                  let mut paths = Vec::new();
+                  for profile in &profiles {
+                      collect_browser_path(&profile.join(relative_dir), &mut paths, &mut size);
+                  }
+                  paths.sort();
+                  paths.dedup();
+
+                  if !paths.is_empty() {
+                      items.push(CleanableItem::new(
+                          &format!("{}_{}", browser_id, id_suffix),
+                          &format!("{} de {}", label, name),
+                          size,
+                          paths,
+                          RiskLevel::Safe,
+                          description,
+                          "El navegador puede regenerar esta caché. Ciérralo antes de limpiar para evitar archivos bloqueados o recreados durante la operación.",
+                          "Seguro de eliminar; cerrar el navegador mejora la limpieza.",
+                          "browser_cache",
+                      ));
+                  }
+              }
+
+          '''
+          text = text[:cache_start] + cache_replacement + text[history_start:]
+
+          session_marker = '        // 4. Cookies y estado de sesión (SENSITIVE). Passwords/site data live elsewhere.\n'
+          if session_marker not in text:
+              raise SystemExit('Missing session marker')
+          crash_block = r'''        // 4. Reportes de fallos del navegador (REVIEW), por archivos exactos.
+              let mut crash_size = 0u64;
+              let mut crash_paths = Vec::new();
+              for crash_dir in browser_crash_report_dirs(&name, &root) {
+                  if !browser_path_is_safe(&crash_dir) {
+                      continue;
+                  }
+
+                  if let Ok(entries) = fs::read_dir(&crash_dir) {
+                      for entry in entries.flatten() {
+                          let entry_path = entry.path();
+                          let entry_name = entry.file_name().to_string_lossy().to_string();
+                          if !is_browser_crash_report_file(&entry_name) {
+                              continue;
+                          }
+
+                          if let Some(size) = browser_file_size(&entry_path) {
+                              crash_size += size;
+                              crash_paths.push(entry_path.to_string_lossy().to_string());
+                          }
+                      }
+                  }
+              }
+              crash_paths.sort();
+              crash_paths.dedup();
+
+              if !crash_paths.is_empty() {
+                  items.push(CleanableItem::new(
+                      &format!("{}_crash_reports", browser_id),
+                      &format!("Reportes de fallos de {}", name),
+                      crash_size,
+                      crash_paths,
+                      RiskLevel::Review,
+                      "Minidumps y metadatos de fallos del navegador que pueden servir para diagnosticar cierres inesperados.",
+                      "Se eliminarán únicamente los reportes mostrados en el Cleanup Plan. Después no podrás usarlos para investigar esos fallos locales.",
+                      "Revisar antes de eliminar si estás diagnosticando un problema del navegador.",
+                      "browser_crash_reports",
+                  ));
+              }
+
+              // 5. Cookies y estado de sesión (SENSITIVE). Passwords/site data live elsewhere.
+          '''
+          text = text.replace(session_marker, crash_block, 1)
+          text = text.replace('        // 5. Credenciales guardadas (SENSITIVE), separadas de cookies/cache.\n', '        // 6. Credenciales guardadas (SENSITIVE), separadas de cookies/cache.\n', 1)
+          text = text.replace('        // 6. Datos persistentes/offline de sitios (SENSITIVE), nunca cache Safe.\n', '        // 7. Datos persistentes/offline de sitios (SENSITIVE), nunca cache Safe.\n', 1)
+
+          test_anchor = '''    fn incomplete_download_filter_is_extension_scoped() {
+                  assert!(is_incomplete_browser_download("video.crdownload", "Chrome"));
+                  assert!(is_incomplete_browser_download("archive.PART", "Firefox"));
+                  assert!(!is_incomplete_browser_download("video.mp4", "Chrome"));
+                  assert!(!is_incomplete_browser_download("File System", "Chrome"));
+                  assert!(!is_incomplete_browser_download("download.part", "Safari"));
+              }
+          '''
+          test_new = test_anchor + '''
+              #[test]
+              fn crash_report_filter_is_file_extension_scoped() {
+                  assert!(is_browser_crash_report_file("abc.dmp"));
+                  assert!(is_browser_crash_report_file("abc.META"));
+                  assert!(is_browser_crash_report_file("bp-id.txt"));
+                  assert!(!is_browser_crash_report_file("settings.json"));
+                  assert!(!is_browser_crash_report_file("Crashpad"));
+              }
+          '''
+          if test_anchor not in text:
+              raise SystemExit('Missing browser tests anchor')
+          text = text.replace(test_anchor, test_new, 1)
+
+          scanner_path.write_text(text)
+
+          i18n_path = Path('src/i18n.tsx')
+          i18n = i18n_path.read_text()
+          exact_anchor = "  'Sensible: revisar rutas y consecuencias antes de eliminar.': 'Sensitive: review paths and consequences before removing.',\n"
+          if exact_anchor not in i18n:
+              raise SystemExit('Missing PR-10 i18n anchor')
+          exact_add = """  'Caché HTTP regenerable de páginas web.': 'Regenerable HTTP cache for web pages.',
+            'Código compilado y cacheado para acelerar páginas y aplicaciones web.': 'Compiled and cached code used to speed up web pages and applications.',
+            'Caché gráfica regenerable usada para acelerar el renderizado.': 'Regenerable graphics cache used to speed up rendering.',
+            'El navegador puede regenerar esta caché. Ciérralo antes de limpiar para evitar archivos bloqueados o recreados durante la operación.': 'The browser can rebuild this cache. Close it before cleaning to avoid locked files or data recreated during the operation.',
+            'Minidumps y metadatos de fallos del navegador que pueden servir para diagnosticar cierres inesperados.': 'Browser crash minidumps and metadata that can help diagnose unexpected exits.',
+            'Se eliminarán únicamente los reportes mostrados en el Cleanup Plan. Después no podrás usarlos para investigar esos fallos locales.': 'Only the reports shown in the Cleanup Plan will be removed. Afterwards you will not be able to use them to investigate those local crashes.',
+            'Revisar antes de eliminar si estás diagnosticando un problema del navegador.': 'Review before removing if you are diagnosing a browser problem.',
+          """
+          i18n = i18n.replace(exact_anchor, exact_anchor + exact_add, 1)
+
+          dynamic_anchor = "    [/^Caché de (.+)$/, (m) => `${m[1]} Cache`],\n"
+          if dynamic_anchor not in i18n:
+              raise SystemExit('Missing cache dynamic rule')
+          dynamic_add = """    [/^Caché HTTP de (.+)$/, (m) => `${m[1]} HTTP Cache`],
+            [/^Caché de Código de (.+)$/, (m) => `${m[1]} Code Cache`],
+            [/^Caché GPU de (.+)$/, (m) => `${m[1]} GPU Cache`],
+            [/^Reportes de fallos de (.+)$/, (m) => `${m[1]} Crash Reports`],
+          """
+          i18n = i18n.replace(dynamic_anchor, dynamic_anchor + dynamic_add, 1)
+          i18n_path.write_text(i18n)
+          PY
+
+      - name: Format scanner
+        run: rustfmt --edition 2021 src-tauri/src/scanner.rs
+
+      - name: Commit product changes
+        shell: bash
+        run: |
+          git config user.name "Danny Maaz"
+          git config user.email "61290346+dannymaaz@users.noreply.github.com"
+          git add src-tauri/src/scanner.rs src/i18n.tsx
+          if git diff --cached --quiet; then
+            echo "No product changes to commit"
+            exit 0
+          fi
+          git commit -m "Complete browser cleanup scope hardening"
+          git push origin HEAD:pr-10-browser-cleanup-safe
