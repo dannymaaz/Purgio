@@ -458,7 +458,7 @@ export const App: React.FC = () => {
   const executeDisable = useCallback(async (item: StartupItem) => {
     setIsActioning(true);
     try {
-      await invoke('disable_startup', { id: item.id, locationKey: item.location_key });
+      await invoke('disable_startup', { id: item.id });
       const startups = await invoke<StartupItem[]>('get_startup_items');
       setStartupItems(startups);
       addToast(`"${item.name}" ${t('desactivado del arranque.')}`, 'success');
@@ -473,11 +473,7 @@ export const App: React.FC = () => {
   const handleEnable = useCallback(async (item: StartupItem) => {
     setIsActioning(true);
     try {
-      await invoke('enable_startup', {
-        name: item.name,
-        locationKey: item.location_key,
-        originalCommand: item.command || ''
-      });
+      await invoke('enable_startup', { id: item.id });
       const startups = await invoke<StartupItem[]>('get_startup_items');
       setStartupItems(startups);
       addToast(`"${item.name}" ${t('activado al inicio.')}`, 'success');
