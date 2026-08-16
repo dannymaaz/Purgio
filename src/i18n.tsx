@@ -446,7 +446,7 @@ const EN_MESSAGES = {
   'Purgio no elimina esta carpeta manualmente porque Chrome administra su ciclo de vida mediante Component Updater.': 'Purgio does not delete this folder manually because Chrome manages its lifecycle through Component Updater.',
   'Para desinstalar el modelo de forma segura, abre esta dirección en Google Chrome y usa el botón Uninstall:': 'To uninstall the model safely, open this address in Google Chrome and use the Uninstall button:',
   'Chrome puede volver a descargar el modelo más adelante si una función de IA integrada lo necesita y el equipo vuelve a ser elegible.': 'Chrome may download the model again later if a built-in AI feature needs it and the device becomes eligible again.',
-  'No se detectó una instalación verificable del modelo local administrado por Chrome.': 'No verifiable installation of Chrome's managed local model was detected.',
+  'No se detectó una instalación verificable del modelo local administrado por Chrome.': "No verifiable installation of Chrome's managed local model was detected.",
 } as const;
 
 export type MessageSource = keyof typeof EN_MESSAGES;
