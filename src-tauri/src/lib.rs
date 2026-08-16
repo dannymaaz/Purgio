@@ -1,6 +1,6 @@
 mod chrome_ai;
-mod component_store;
 mod cleaner;
+mod component_store;
 mod persistence;
 mod safety;
 mod scanner;
@@ -182,13 +182,17 @@ fn summarize_item_status(paths: &[CleanupPathResult]) -> CleanupStatus {
         return CleanupStatus::NoOp;
     }
 
-    if paths.iter().all(|path| path.status == CleanupStatus::Failed) {
+    if paths
+        .iter()
+        .all(|path| path.status == CleanupStatus::Failed)
+    {
         return CleanupStatus::Failed;
     }
 
-    if paths.iter().any(|path| {
-        matches!(path.status, CleanupStatus::Partial | CleanupStatus::Failed)
-    }) {
+    if paths
+        .iter()
+        .any(|path| matches!(path.status, CleanupStatus::Partial | CleanupStatus::Failed))
+    {
         return CleanupStatus::Partial;
     }
 
@@ -270,17 +274,13 @@ fn get_startup_items() -> Vec<StartupItem> {
 }
 
 #[tauri::command]
-fn disable_startup(id: String, location_key: String) -> Result<(), String> {
-    startup::disable_startup_item(&id, &location_key)
+fn disable_startup(id: String) -> Result<(), String> {
+    startup::disable_startup_item(&id)
 }
 
 #[tauri::command]
-fn enable_startup(
-    name: String,
-    location_key: String,
-    original_command: String,
-) -> Result<(), String> {
-    startup::enable_startup_item(&name, &location_key, &original_command)
+fn enable_startup(id: String) -> Result<(), String> {
+    startup::enable_startup_item(&id)
 }
 
 #[tauri::command]
@@ -388,16 +388,13 @@ mod tests {
 
     #[test]
     fn cleanup_plan_revision_ignores_path_order() {
-        let first = cleanable_item(
-            &["C:\\Temp\\a", "C:\\Temp\\b"],
-            safety::RiskLevel::Safe,
-        );
-        let second = cleanable_item(
-            &["C:\\Temp\\b", "C:\\Temp\\a"],
-            safety::RiskLevel::Safe,
-        );
+        let first = cleanable_item(&["C:\\Temp\\a", "C:\\Temp\\b"], safety::RiskLevel::Safe);
+        let second = cleanable_item(&["C:\\Temp\\b", "C:\\Temp\\a"], safety::RiskLevel::Safe);
 
-        assert_eq!(cleanup_plan_revision(&[first]), cleanup_plan_revision(&[second]));
+        assert_eq!(
+            cleanup_plan_revision(&[first]),
+            cleanup_plan_revision(&[second])
+        );
     }
 
     #[test]
@@ -405,7 +402,10 @@ mod tests {
         let first = cleanable_item(&["C:\\Temp\\a"], safety::RiskLevel::Safe);
         let second = cleanable_item(&["C:\\Temp\\b"], safety::RiskLevel::Safe);
 
-        assert_ne!(cleanup_plan_revision(&[first]), cleanup_plan_revision(&[second]));
+        assert_ne!(
+            cleanup_plan_revision(&[first]),
+            cleanup_plan_revision(&[second])
+        );
     }
 
     #[test]
@@ -413,6 +413,9 @@ mod tests {
         let safe = cleanable_item(&["C:\\Temp\\a"], safety::RiskLevel::Safe);
         let sensitive = cleanable_item(&["C:\\Temp\\a"], safety::RiskLevel::Sensitive);
 
-        assert_ne!(cleanup_plan_revision(&[safe]), cleanup_plan_revision(&[sensitive]));
+        assert_ne!(
+            cleanup_plan_revision(&[safe]),
+            cleanup_plan_revision(&[sensitive])
+        );
     }
 }

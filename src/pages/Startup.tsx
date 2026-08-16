@@ -9,8 +9,6 @@ export interface StartupItem {
   is_safe_to_disable: boolean;
   description: string;
   impact: 'High' | 'Medium' | 'Low' | 'Unknown';
-  location_key?: string;
-  command?: string;
 }
 
 interface StartupProps {
@@ -124,7 +122,7 @@ export const Startup: React.FC<StartupProps> = ({ items, handleDisable, handleEn
                           {t('Desactivar')}
                         </button>
                       ) : (
-                        <button className="btn btn-primary" onClick={() => handleEnable(item)} disabled={isActioning || !item.command} title={!item.command ? t('Falta el comando original para reactivar') : ''} style={{ padding: '4px 10px', fontSize: '11px', minWidth: '80px' }}>
+                        <button className="btn btn-primary" onClick={() => handleEnable(item)} disabled={isActioning} style={{ padding: '4px 10px', fontSize: '11px', minWidth: '80px' }}>
                           {t('Activar')}
                         </button>
                       )}
@@ -134,12 +132,6 @@ export const Startup: React.FC<StartupProps> = ({ items, handleDisable, handleEn
                   {isExpanded && (
                     <div className="table-details-panel" style={{ display: 'block', padding: '12px 20px', borderBottom: '1px solid var(--border-color)', backgroundColor: 'rgba(0,0,0,0.15)' }}>
                       <div className="details-content" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        {item.command && (
-                          <div className="details-text-group">
-                            <span className="details-label" style={{ fontSize: '11px', fontWeight: 600, color: 'var(--accent-aqua)', display: 'block', marginBottom: '2px' }}>{t('Comando de ejecución:')}</span>
-                            <code style={{ fontSize: '11px', color: 'var(--text-secondary)', wordBreak: 'break-all', fontFamily: 'monospace', background: 'rgba(0,0,0,0.2)', padding: '4px 8px', borderRadius: '4px', display: 'block' }}>{item.command}</code>
-                          </div>
-                        )}
                         <div className="details-text-group">
                           <span className="details-label" style={{ fontSize: '11px', fontWeight: 600, color: 'var(--accent-aqua)', display: 'block', marginBottom: '2px' }}>{t('Recomendación:')}</span>
                           <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: '0' }}>
