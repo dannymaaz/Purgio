@@ -175,7 +175,10 @@ mod tests {
 
     #[test]
     fn component_version_parser_is_fail_closed() {
-        assert_eq!(parse_component_version("2026.8.16.1"), Some(vec![2026, 8, 16, 1]));
+        assert_eq!(
+            parse_component_version("2026.8.16.1"),
+            Some(vec![2026, 8, 16, 1])
+        );
         assert_eq!(parse_component_version("1"), Some(vec![1]));
         assert!(parse_component_version("1..2").is_none());
         assert!(parse_component_version("1.beta.2").is_none());

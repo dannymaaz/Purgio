@@ -4,6 +4,22 @@ import { InfoIcon, TrashIcon, WarningIcon, RefreshIcon } from '../components/Ico
 import { useI18n } from '../i18n';
 import { formatBytes } from '../utils/format';
 
+export interface ChromeModelVersion {
+  version: string;
+  path: string;
+  size: number;
+}
+
+export interface ChromeOnDeviceModelInfo {
+  installed: boolean;
+  component_name: string;
+  component_id: string;
+  root_path: string | null;
+  total_size: number;
+  versions: ChromeModelVersion[];
+  management_url: string;
+}
+
 interface BrowsersProps {
   items: CleanableItem[];
   setItems: React.Dispatch<React.SetStateAction<CleanableItem[]>>;
@@ -11,6 +27,7 @@ interface BrowsersProps {
   isCleaning: boolean;
   scanStatus?: 'idle' | 'scanning' | 'done';
   handleScan?: () => void;
+  chromeOnDeviceModel?: ChromeOnDeviceModelInfo | null;
 }
 
 export const Browsers: React.FC<BrowsersProps> = ({
@@ -19,7 +36,8 @@ export const Browsers: React.FC<BrowsersProps> = ({
   handleClean,
   isCleaning,
   scanStatus = 'idle',
-  handleScan
+  handleScan,
+  chromeOnDeviceModel
 }) => {
   const [expandedItem, setExpandedItem] = useState<string | null>(null);
   const { t, backend, language } = useI18n();
@@ -183,6 +201,59 @@ export const Browsers: React.FC<BrowsersProps> = ({
           </div>
         )}
       </div>
+
+      {chromeOnDeviceModel && (
+        <div className="card" style={{ marginBottom: '18px', padding: '18px 20px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', alignItems: 'flex-start' }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <h3 style={{ margin: 0, fontSize: '15px' }}>{t('Modelo IA local de Chrome')}</h3>
+                <span className={`badge ${chromeOnDeviceModel.installed ? 'badge-review' : 'badge-safe'}`}>
+                  {t(chromeOnDeviceModel.installed ? 'Detectado' : 'No detectado')}
+                </span>
+              </div>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '12px', margin: '6px 0 0', lineHeight: 1.5 }}>
+                {t('Componente administrado por Google Chrome para funciones de IA integradas en el dispositivo.')}
+              </p>
+            </div>
+            {chromeOnDeviceModel.installed && (
+              <strong style={{ fontSize: '15px', whiteSpace: 'nowrap' }}>{formatBytes(chromeOnDeviceModel.total_size, language)}</strong>
+            )}
+          </div>
+
+          {chromeOnDeviceModel.installed ? (
+            <div style={{ marginTop: '14px', display: 'grid', gap: '10px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(120px, 160px) 1fr', gap: '8px', fontSize: '12px' }}>
+                <span style={{ color: 'var(--text-muted)' }}>{t('ID del componente')}</span>
+                <code style={{ overflowWrap: 'anywhere' }}>{chromeOnDeviceModel.component_id}</code>
+                <span style={{ color: 'var(--text-muted)' }}>{t('Versiones verificadas')}</span>
+                <span>{chromeOnDeviceModel.versions.map(version => version.version).join(', ')}</span>
+                {chromeOnDeviceModel.root_path && (<>
+                  <span style={{ color: 'var(--text-muted)' }}>{t('Ruta detectada')}</span>
+                  <code style={{ overflowWrap: 'anywhere' }}>{chromeOnDeviceModel.root_path}</code>
+                </>)}
+              </div>
+
+              <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '10px' }}>
+                <p style={{ margin: 0, fontSize: '12px', lineHeight: 1.55 }}>
+                  {t('Purgio no elimina esta carpeta manualmente porque Chrome administra su ciclo de vida mediante Component Updater.')}
+                </p>
+                <p style={{ margin: '7px 0 0', fontSize: '12px', lineHeight: 1.55, color: 'var(--text-secondary)' }}>
+                  {t('Para desinstalar el modelo de forma segura, abre esta dirección en Google Chrome y usa el botón Uninstall:')}
+                  {' '}<code>{chromeOnDeviceModel.management_url}</code>
+                </p>
+                <p style={{ margin: '7px 0 0', fontSize: '11px', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                  {t('Chrome puede volver a descargar el modelo más adelante si una función de IA integrada lo necesita y el equipo vuelve a ser elegible.')}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <p style={{ margin: '12px 0 0', fontSize: '12px', color: 'var(--text-muted)' }}>
+              {t('No se detectó una instalación verificable del modelo local administrado por Chrome.')}
+            </p>
+          )}
+        </div>
+      )}
 
       {scanStatus === 'scanning' ? renderSkeletons() : scanStatus === 'idle' ? (
         <div className="card" style={{ textAlign: 'center', padding: '54px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
