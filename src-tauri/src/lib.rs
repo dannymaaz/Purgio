@@ -1,3 +1,4 @@
+mod chrome_ai;
 mod cleaner;
 mod persistence;
 mod safety;
@@ -63,6 +64,11 @@ fn scan_system_files() -> Vec<CleanableItem> {
 #[tauri::command]
 fn scan_browser_files() -> Vec<CleanableItem> {
     scanner::scan_browser_files()
+}
+
+#[tauri::command]
+fn get_chrome_on_device_model_info() -> chrome_ai::ChromeOnDeviceModelInfo {
+    chrome_ai::get_chrome_on_device_model_info()
 }
 
 /// Construye el catálogo autorizado de elementos limpiables directamente en Rust.
@@ -301,6 +307,7 @@ pub fn run() {
             get_system_stats,
             scan_system_files,
             scan_browser_files,
+            get_chrome_on_device_model_info,
             preview_clean_items,
             clean_items,
             get_startup_items,

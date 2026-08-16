@@ -9,7 +9,7 @@ import { Splash } from './components/Splash';
 import { Dashboard } from './pages/Dashboard';
 import { Cleaner, CleanableItem } from './pages/Cleaner';
 import { CleanupPlan, CleanupRunResult } from './pages/CleanupPlan';
-import { Browsers } from './pages/Browsers';
+import { Browsers, type ChromeOnDeviceModelInfo } from './pages/Browsers';
 import { Startup, StartupItem } from './pages/Startup';
 import { Background, ProcessItem } from './pages/Background';
 import { Settings } from './pages/Settings';
@@ -77,6 +77,7 @@ export const App: React.FC = () => {
   // Estados de datos globales (tipado correcto, no 'any')
   const [systemStats, setSystemStats] = useState<SystemStats | null>(null);
   const [cleanableItems, setCleanableItems] = useState<CleanableItem[]>([]);
+  const [chromeOnDeviceModel, setChromeOnDeviceModel] = useState<ChromeOnDeviceModelInfo | null>(null);
   const [startupItems, setStartupItems] = useState<StartupItem[]>([]);
   const [backgroundProcesses, setBackgroundProcesses] = useState<ProcessItem[]>([]);
 
@@ -310,6 +311,13 @@ export const App: React.FC = () => {
     try {
       const sysFiles = await invoke<CleanableItem[]>('scan_system_files');
       const allBrowsers = await invoke<CleanableItem[]>('scan_browser_files');
+      try {
+        const modelInfo = await invoke<ChromeOnDeviceModelInfo>('get_chrome_on_device_model_info');
+        setChromeOnDeviceModel(modelInfo);
+      } catch (error) {
+        console.error('Error al detectar el modelo IA local de Chrome:', error);
+        setChromeOnDeviceModel(null);
+      }
       const browserFiles = showSensitive
         ? allBrowsers
         : allBrowsers.filter(i => i.risk_level !== 'Sensitive');
@@ -556,6 +564,7 @@ export const App: React.FC = () => {
             isCleaning={isCleaning || isPreparingCleanPlan}
             scanStatus={scanStatus}
             handleScan={handleScan}
+            chromeOnDeviceModel={chromeOnDeviceModel}
           />
         );
       case 'startup':
