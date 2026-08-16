@@ -74,14 +74,15 @@ pub fn parse_analysis(output: &str) -> Result<ComponentStoreAnalysis, String> {
         .and_then(parse_yes_no)
         .ok_or_else(|| "DISM output did not contain a valid cleanup recommendation.".to_string())?;
 
-    let reclaimable_packages = field(output, "Number of Reclaimable Packages")
-        .and_then(|value| value.parse::<u32>().ok());
+    let reclaimable_packages =
+        field(output, "Number of Reclaimable Packages").and_then(|value| value.parse::<u32>().ok());
 
     Ok(ComponentStoreAnalysis {
         explorer_reported_size: explorer_reported_size.to_string(),
         actual_size: actual_size.to_string(),
         shared_with_windows: field(output, "Shared with Windows").map(str::to_string),
-        backups_and_disabled_features: field(output, "Backups and Disabled Features").map(str::to_string),
+        backups_and_disabled_features: field(output, "Backups and Disabled Features")
+            .map(str::to_string),
         cache_and_temporary_data: field(output, "Cache and Temporary Data").map(str::to_string),
         last_cleanup: field(output, "Date of Last Cleanup").map(str::to_string),
         reclaimable_packages,
@@ -229,9 +230,17 @@ Component Store Cleanup Recommended : Yes
 
     #[test]
     fn command_arguments_never_include_reset_base() {
-        assert!(!ANALYZE_ARGS.iter().any(|arg| arg.eq_ignore_ascii_case("/ResetBase")));
-        assert!(!CLEANUP_ARGS.iter().any(|arg| arg.eq_ignore_ascii_case("/ResetBase")));
-        assert!(CLEANUP_ARGS.iter().any(|arg| arg.eq_ignore_ascii_case("/NoRestart")));
-        assert!(ANALYZE_ARGS.iter().any(|arg| arg.eq_ignore_ascii_case("/English")));
+        assert!(!ANALYZE_ARGS
+            .iter()
+            .any(|arg| arg.eq_ignore_ascii_case("/ResetBase")));
+        assert!(!CLEANUP_ARGS
+            .iter()
+            .any(|arg| arg.eq_ignore_ascii_case("/ResetBase")));
+        assert!(CLEANUP_ARGS
+            .iter()
+            .any(|arg| arg.eq_ignore_ascii_case("/NoRestart")));
+        assert!(ANALYZE_ARGS
+            .iter()
+            .any(|arg| arg.eq_ignore_ascii_case("/English")));
     }
 }

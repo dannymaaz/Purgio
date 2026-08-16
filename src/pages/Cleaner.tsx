@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { InfoIcon, TrashIcon, RefreshIcon } from '../components/Icons';
 import { useI18n } from '../i18n';
 import { formatBytes } from '../utils/format';
+import { ComponentStorePanel } from './ComponentStore';
 
 export interface CleanableItem {
   id: string;
@@ -227,6 +228,8 @@ export const Cleaner: React.FC<CleanerProps> = ({
           )}
         </div>
       )}
+
+      <ComponentStorePanel />
     </div>
   );
 };
