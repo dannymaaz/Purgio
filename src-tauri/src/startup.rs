@@ -193,7 +193,7 @@ mod windows {
         format!("registry:{}:{name}", origin.token())
     }
     fn encode_value_type(value: &RegValue) -> Result<String, String> {
-        let kind = match value.vtype {
+        let kind = match &value.vtype {
             REG_NONE => "none",
             REG_SZ => "string",
             REG_EXPAND_SZ => "expand-string",
@@ -214,7 +214,7 @@ mod windows {
         };
         Ok(kind.into())
     }
-    fn decode_value_type(kind: &str) -> Result<winreg::RegType, String> {
+    fn decode_value_type(kind: &str) -> Result<winreg::enums::RegType, String> {
         match kind {
             "none" => Ok(REG_NONE),
             "string" => Ok(REG_SZ),
